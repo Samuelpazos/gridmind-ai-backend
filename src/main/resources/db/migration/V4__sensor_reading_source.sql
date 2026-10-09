@@ -1,0 +1,3 @@
+ALTER TABLE sensor_readings
+    ADD COLUMN source VARCHAR(20) NOT NULL DEFAULT 'SIMULATED'
+    CHECK (source IN ('SIMULATED', 'HARDWARE'));
