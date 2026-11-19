@@ -68,3 +68,11 @@ WebSocket endpoint disponible en: `ws://localhost:8080/ws/stream`
 ### Comunicación con un frontend desplegado por separado
 
 El frontend llama a la API REST bajo `/api` y conserva las credenciales de sesión. En el build del frontend, configura `VITE_API_BASE_URL` con la URL pública del backend terminada en `/api` (por ejemplo, `https://api.example.com/api`). En el backend, configura `CORS_ALLOWED_ORIGIN_PATTERNS` con el origen exacto del frontend (por ejemplo, `https://gridmind.example.com`); se permiten varios orígenes separados por comas. La misma lista se aplica a WebSocket. Mantén HTTPS y no uses comodines de origen en producción.
+
+## Guías
+
+- [documentar el despliegue HTTPS del backend](docs/despliegue.md)
+- [explicar las migraciones de PostgreSQL](docs/postgresql.md)
+- [describir permisos de operador, administración y demo](docs/permisos.md)
+- [documentar el contrato de telemetría](docs/telemetria.md)
+- [registrar comprobaciones del backend para la entrega](docs/verificacion.md)
