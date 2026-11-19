@@ -2,6 +2,7 @@ package com.gridmind.service;
 
 import com.gridmind.domain.GridStatus;
 import com.gridmind.domain.RiskLevel;
+import com.gridmind.domain.SensorType;
 import com.gridmind.dto.SimulationRequestDto;
 import com.gridmind.dto.SimulationResultDto;
 import com.gridmind.entity.SensorEntity;
@@ -21,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.ZonedDateTime;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 @Service
@@ -49,23 +51,38 @@ public class SimulationService {
 
     @Transactional
     public SimulationResultDto executeSimulation(SimulationRequestDto request) {
-        TransformerEntity transformer = transformerRepository.findById(request.getTransformerId())
+        TransformerEntity transformer = transformerRepository.findByIdAndArchivedAtIsNull(request.getTransformerId())
                 .orElseThrow(() -> new IllegalArgumentException("Transformer not found: " + request.getTransformerId()));
 
-        // Fetch current baseline sensor readings
-        List<SensorEntity> sensors = sensorRepository.findByTransformerId(transformer.getId());
-        Map<String, Double> sensorValues = new HashMap<>();
-        for (SensorEntity sensor : sensors) {
-            SensorReadingEntity reading = readingRepository.findLatestBySensorId(sensor.getId()).orElse(null);
-            double val = reading != null ? reading.getValue() : sensor.getType().getDefaultThreshold() * 0.6;
-            sensorValues.put(sensor.getType().name(), val);
+        SensorType type = SensorType.valueOf(request.getVariableModified().toUpperCase(Locale.ROOT));
+        Double targetValue = request.getTargetValue();
+        Double requestedDelta = request.getDeltaPercent();
+        if ((targetValue == null) == (requestedDelta == null)) {
+            throw new IllegalArgumentException("Indica un valor objetivo o una variación porcentual.");
+        }
+        if (requestedDelta != null && !Double.isFinite(requestedDelta)) {
+            throw new IllegalArgumentException("La variación porcentual debe ser un número finito.");
         }
 
-        // Apply simulated delta percentage modification to the target variable (WITHOUT MUTATING OPERATIONAL READINGS)
-        String var = request.getVariableModified().toUpperCase();
-        double currentVal = sensorValues.getOrDefault(var, 50.0);
-        double deltaMult = 1.0 + (request.getDeltaPercent() / 100.0);
-        double simulatedVal = currentVal * deltaMult;
+        List<SensorEntity> sensors = sensorRepository.findByTransformerId(transformer.getId());
+        Map<String, Double> sensorValues = new HashMap<>();
+        Double originalValue = null;
+        for (SensorEntity sensor : sensors) {
+            SensorReadingEntity reading = readingRepository.findLatestBySensorId(sensor.getId()).orElse(null);
+            double value = reading != null ? reading.getValue() : sensor.getType().getDefaultThreshold() * 0.6;
+            sensorValues.put(sensor.getType().name(), value);
+            if (sensor.getType() == type) {
+                originalValue = reading != null ? reading.getValue() : null;
+            }
+        }
+
+        String var = type.name();
+        double baseline = sensorValues.getOrDefault(var, 50.0);
+        double simulatedVal = targetValue != null ? targetValue : baseline * (1.0 + requestedDelta / 100.0);
+        double minimum = type == SensorType.TEMPERATURE ? -273.15 : 0.0;
+        if (!Double.isFinite(simulatedVal) || (targetValue != null && simulatedVal < minimum)) {
+            throw new IllegalArgumentException("El valor simulado está fuera del rango válido.");
+        }
         sensorValues.put(var, simulatedVal);
 
         // Evaluate simulated outcome using active strategy
@@ -91,7 +108,9 @@ public class SimulationService {
         SimulationEntity simEntity = SimulationEntity.builder()
                 .transformer(transformer)
                 .variableModified(var)
-                .deltaPercent(request.getDeltaPercent())
+                .deltaPercent(requestedDelta)
+                .originalValue(originalValue)
+                .simulatedValue(simulatedVal)
                 .originalRisk(transformer.getRiskLevel())
                 .simulatedRisk(simResult.getRiskLevel())
                 .originalProbability(transformer.getFailureProbability())

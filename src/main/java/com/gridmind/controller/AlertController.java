@@ -2,6 +2,7 @@ package com.gridmind.controller;
 
 import com.gridmind.ai.ClaudeExplanationService;
 import com.gridmind.ai.ClaudeNotConfiguredException;
+import com.gridmind.ai.ClaudeQuotaExceededException;
 import com.gridmind.ai.ClaudeServiceException;
 import com.gridmind.dto.AiStatusDto;
 import com.gridmind.dto.AlertDto;
@@ -11,6 +12,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.ZonedDateTime;
@@ -37,17 +39,19 @@ public class AlertController {
 
     @PostMapping("/{id}/ack")
     @Operation(summary = "Reconocer una alerta por ID")
-    public ResponseEntity<AlertDto> acknowledgeAlert(@PathVariable String id, @RequestParam(required = false, defaultValue = "OPERATOR") String operator) {
-        return ResponseEntity.ok(alertService.acknowledgeAlert(id, operator));
+    public ResponseEntity<AlertDto> acknowledgeAlert(@PathVariable String id, Authentication authentication) {
+        return ResponseEntity.ok(alertService.acknowledgeAlert(id, authentication.getName()));
     }
 
     @GetMapping("/ai/status")
     @Operation(summary = "Consultar si Claude está configurado")
     public ResponseEntity<AiStatusDto> getAiStatus() {
+        int remainingRequests = claudeExplanationService.getRemainingRequests();
         return ResponseEntity.ok(new AiStatusDto(
-                claudeExplanationService.isConfigured(),
+                claudeExplanationService.isConfigured() && remainingRequests > 0,
                 "Anthropic Claude",
-                claudeExplanationService.getModel()
+                claudeExplanationService.getModel(),
+                remainingRequests
         ));
     }
 
@@ -64,6 +68,9 @@ public class AlertController {
                     explanation,
                     ZonedDateTime.now()
             ));
+        } catch (ClaudeQuotaExceededException exception) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .body(java.util.Map.of("message", exception.getMessage()));
         } catch (ClaudeNotConfiguredException exception) {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                     .body(java.util.Map.of("message", "Claude no está configurado. Añade CLAUDE_API_KEY al entorno del backend y reinícialo."));

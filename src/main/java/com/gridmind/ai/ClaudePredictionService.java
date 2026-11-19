@@ -38,7 +38,7 @@ public class ClaudePredictionService {
     }
 
     public ClaudePredictionDto predictCurrentRisk(String transformerId) {
-        TransformerEntity transformer = transformerRepository.findById(transformerId)
+        TransformerEntity transformer = transformerRepository.findByIdAndArchivedAtIsNull(transformerId)
                 .orElseThrow(() -> new TransformerNotFoundException(transformerId));
 
         Map<String, Double> sensorValues = new HashMap<>();

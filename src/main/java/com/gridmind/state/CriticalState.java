@@ -11,7 +11,9 @@ public class CriticalState implements TransformerState {
 
     @Override
     public TransformerState evaluateNextState(double failureProbability, boolean maintenanceCompleted) {
-        if (failureProbability > 0.92) {
+        if (maintenanceCompleted && failureProbability < 0.30) {
+            return new NormalState();
+        } else if (failureProbability > 0.92) {
             return new FailedState();
         } else if (failureProbability < 0.60 && failureProbability >= 0.30) {
             return new WarningState();

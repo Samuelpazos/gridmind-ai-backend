@@ -6,72 +6,83 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
-/**
- * Synthetic Dataset Generator for GridMind AI.
- * Generates reproducible training data (Seed 42) with normal, gradual degradation,
- * sudden bursts, noise, and class overlap for transformer failure prediction.
- */
 @Component
 public class SyntheticDatasetGenerator {
 
     public static final long FIXED_SEED = 42L;
 
+    public enum Scenario {
+        NORMAL,
+        GRADUAL_DEGRADATION,
+        SUDDEN_FAILURE
+    }
+
     public record DatasetSample(
-            double temperature, // °C
-            double voltage,     // kV
-            double current,     // A
-            double vibration,   // mm/s
-            double ageYears,    // years
-            int failureLabel    // 0 = Normal, 1 = Failure within N hours
+            double temperature,
+            double voltage,
+            double current,
+            double vibration,
+            double ageYears,
+            int failureLabel,
+            Scenario scenario
     ) {}
 
     public List<DatasetSample> generateSyntheticDataset(int totalSamples) {
+        if (totalSamples < 10) {
+            throw new IllegalArgumentException("El dataset debe tener al menos 10 muestras.");
+        }
+
         Random random = new Random(FIXED_SEED);
-        List<DatasetSample> dataset = new ArrayList<>();
-
+        List<DatasetSample> dataset = new ArrayList<>(totalSamples);
         int normalCount = (int) (totalSamples * 0.70);
-        int gradualDegradationCount = (int) (totalSamples * 0.18);
-        int suddenFailureCount = totalSamples - normalCount - gradualDegradationCount;
+        int gradualCount = (int) (totalSamples * 0.18);
+        int suddenCount = totalSamples - normalCount - gradualCount;
 
-        // 1. Normal Operation (70%)
         for (int i = 0; i < normalCount; i++) {
-            double temp = 45.0 + random.nextGaussian() * 5.0;     // Mean 45, std 5
-            double volt = 13.8 + random.nextGaussian() * 0.2;     // Mean 13.8, std 0.2
-            double curr = 220.0 + random.nextGaussian() * 30.0;  // Mean 220, std 30
-            double vib = 1.0 + Math.abs(random.nextGaussian() * 0.4); // Mean 1.0, std 0.4
-            double age = 1.0 + random.nextDouble() * 10.0;       // 1 to 11 years
-
-            int label = 0;
-            // Introduce 3% noise/class overlap for realism
-            if (random.nextDouble() < 0.03) {
-                label = 1;
-            }
-            dataset.add(new DatasetSample(temp, volt, curr, vib, age, label));
+            double load = random.nextDouble();
+            boolean transientSensorProfile = i < normalCount * 0.15;
+            dataset.add(new DatasetSample(
+                    transientSensorProfile
+                            ? 80.0 + random.nextGaussian() * 7.0
+                            : 45.0 + load * 25.0 + random.nextGaussian() * 7.0,
+                    13.8 + random.nextGaussian() * 0.28,
+                    transientSensorProfile
+                            ? 360.0 + random.nextDouble() * 130.0 + random.nextGaussian() * 35.0
+                            : 180.0 + load * 220.0 + random.nextGaussian() * 45.0,
+                    transientSensorProfile
+                            ? Math.abs(4.2 + random.nextDouble() * 1.6 + random.nextGaussian() * 0.65)
+                            : Math.abs(0.7 + load * 2.4 + random.nextGaussian() * 0.7),
+                    transientSensorProfile
+                            ? 6.0 + random.nextDouble() * 16.0
+                            : 1.0 + random.nextDouble() * 20.0,
+                    0,
+                    Scenario.NORMAL
+            ));
         }
 
-        // 2. Gradual Degradation (18%)
-        for (int i = 0; i < gradualDegradationCount; i++) {
-            double progress = random.nextDouble(); // 0 to 1 degradation severity
-            double temp = 65.0 + progress * 28.0 + random.nextGaussian() * 2.0;  // 65 to 93 °C
-            double volt = 13.8 + (random.nextDouble() - 0.5) * 0.6;
-            double curr = 320.0 + progress * 160.0 + random.nextGaussian() * 20.0; // 320 to 480 A
-            double vib = 2.5 + progress * 4.0 + random.nextGaussian() * 0.5;      // 2.5 to 6.5 mm/s
-            double age = 7.0 + random.nextDouble() * 13.0;                         // 7 to 20 years
-
-            int label = progress > 0.45 ? 1 : 0;
-            dataset.add(new DatasetSample(temp, volt, curr, vib, age, label));
+        for (int i = 0; i < gradualCount; i++) {
+            double progress = random.nextDouble();
+            dataset.add(new DatasetSample(
+                    64.0 + progress * 30.0 + random.nextGaussian() * 5.0,
+                    13.8 + random.nextGaussian() * 0.42,
+                    285.0 + progress * 190.0 + random.nextGaussian() * 55.0,
+                    2.0 + progress * 4.5 + random.nextGaussian() * 0.9,
+                    4.0 + random.nextDouble() * 18.0,
+                    1,
+                    Scenario.GRADUAL_DEGRADATION
+            ));
         }
 
-        // 3. Sudden Failure Bursts (12%)
-        for (int i = 0; i < suddenFailureCount; i++) {
-            double temp = 82.0 + random.nextDouble() * 20.0;     // 82 to 102 °C
-            double volt = 13.8 + (random.nextDouble() - 0.5) * 1.5;
-            double curr = 400.0 + random.nextDouble() * 250.0;   // 400 to 650 A
-            double vib = 4.5 + random.nextDouble() * 5.0;        // 4.5 to 9.5 mm/s
-            double age = 10.0 + random.nextDouble() * 12.0;      // 10 to 22 years
-
-            int label = 1;
-            dataset.add(new DatasetSample(temp, volt, curr, vib, age, label));
+        for (int i = 0; i < suddenCount; i++) {
+            dataset.add(new DatasetSample(
+                    76.0 + random.nextDouble() * 27.0 + random.nextGaussian() * 4.0,
+                    13.8 + random.nextGaussian() * 0.65,
+                    360.0 + random.nextDouble() * 260.0 + random.nextGaussian() * 45.0,
+                    3.4 + random.nextDouble() * 5.2 + random.nextGaussian() * 0.8,
+                    3.0 + random.nextDouble() * 20.0,
+                    1,
+                    Scenario.SUDDEN_FAILURE
+            ));
         }
 
         return dataset;

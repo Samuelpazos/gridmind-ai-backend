@@ -4,13 +4,14 @@ import com.gridmind.dto.HardwareReadingRequestDto;
 import com.gridmind.dto.SensorReadingDto;
 import com.gridmind.dto.TelemetryStatusDto;
 import com.gridmind.entity.SensorEntity;
-import com.gridmind.entity.SensorReadingEntity;
+import com.gridmind.entity.SensorReadingBatchEntity;
 import com.gridmind.mapper.EntityDtoMapper;
-import com.gridmind.observer.SensorEvent;
-import com.gridmind.observer.SensorSubject;
+import com.gridmind.repository.SensorReadingBatchRepository;
 import com.gridmind.repository.SensorReadingRepository;
 import com.gridmind.repository.SensorRepository;
 import com.gridmind.simulation.SensorSimulator;
+import com.gridmind.telemetry.ReadingHandler;
+import com.gridmind.telemetry.ReadingHandler.ReadingInput;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -20,36 +21,38 @@ import org.springframework.web.server.ResponseStatusException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.ZonedDateTime;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 @Service
 public class HardwareTelemetryService {
 
     private static final int MAX_BATCH_SIZE = 32;
-    private static final double MAX_ABSOLUTE_READING = 1_000_000.0;
 
     private final SensorRepository sensorRepository;
-    private final SensorReadingRepository readingRepository;
-    private final SensorSubject sensorSubject;
+    private final SensorReadingBatchRepository readingBatchRepository;
+    private final SensorReadingRepository sensorReadingRepository;
     private final EntityDtoMapper mapper;
     private final SensorSimulator sensorSimulator;
+    private final ReadingHandler readingHandler;
     private final String deviceToken;
 
     public HardwareTelemetryService(
             SensorRepository sensorRepository,
-            SensorReadingRepository readingRepository,
-            SensorSubject sensorSubject,
+            SensorReadingBatchRepository readingBatchRepository,
+            SensorReadingRepository sensorReadingRepository,
             EntityDtoMapper mapper,
             SensorSimulator sensorSimulator,
+            ReadingHandler readingHandler,
             @Value("${telemetry.device-token:}") String deviceToken) {
         this.sensorRepository = sensorRepository;
-        this.readingRepository = readingRepository;
-        this.sensorSubject = sensorSubject;
+        this.readingBatchRepository = readingBatchRepository;
+        this.sensorReadingRepository = sensorReadingRepository;
         this.mapper = mapper;
         this.sensorSimulator = sensorSimulator;
+        this.readingHandler = readingHandler;
         this.deviceToken = deviceToken == null ? "" : deviceToken.trim();
     }
 
@@ -70,11 +73,34 @@ public class HardwareTelemetryService {
     }
 
     public TelemetryStatusDto getStatus() {
+        ZonedDateTime now = ZonedDateTime.now();
+        List<String> recentSources = sensorReadingRepository.findDistinctSourcesBetween(
+                now.minusSeconds(60), now);
+        ZonedDateTime lastHardwareReadingAt = sensorReadingRepository
+                .findFirstBySourceOrderByTimestampDesc("HARDWARE")
+                .map(reading -> reading.getTimestamp())
+                .orElse(null);
         return new TelemetryStatusDto(
                 isConfigured(),
                 sensorSimulator.isActive(),
-                "El modelo local se entrenó con datos sintéticos. Valida y etiqueta mediciones de la maqueta antes de interpretar sus predicciones como desempeño real."
+                "El modelo local se entrenó con datos sintéticos. Valida y etiqueta mediciones de la maqueta antes de interpretar sus predicciones como desempeño real.",
+                resolveRecentDataSource(recentSources),
+                lastHardwareReadingAt
         );
+    }
+
+    private static String resolveRecentDataSource(List<String> sources) {
+        Set<String> normalizedSources = sources.stream()
+                .map(source -> source.toUpperCase(Locale.ROOT))
+                .collect(java.util.stream.Collectors.toSet());
+        boolean hasSimulation = normalizedSources.contains("SIMULATION")
+                || normalizedSources.contains("SIMULATED");
+        boolean hasHardware = normalizedSources.contains("HARDWARE");
+
+        if (hasSimulation && hasHardware) return "MIXED";
+        if (hasSimulation) return "SIMULATION";
+        if (hasHardware) return "HARDWARE";
+        return "NONE";
     }
 
     @Transactional
@@ -89,7 +115,7 @@ public class HardwareTelemetryService {
         }
 
         Set<String> seenSensors = new HashSet<>();
-        List<SensorReadingEntity> pending = new ArrayList<>(requests.size());
+        List<ReadingInput> pending = new java.util.ArrayList<>(requests.size());
         ZonedDateTime now = ZonedDateTime.now();
 
         for (HardwareReadingRequestDto request : requests) {
@@ -98,57 +124,26 @@ public class HardwareTelemetryService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "El lote contiene más de una lectura para el sensor " + sensorCode + ".");
             }
-            if (!Double.isFinite(request.value()) || Math.abs(request.value()) > MAX_ABSOLUTE_READING) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "La lectura de " + sensorCode + " debe ser un número finito dentro del rango admitido.");
-            }
-
-            SensorEntity sensor = sensorRepository.findByCode(sensorCode)
+            SensorEntity sensor = sensorRepository.findByCodeAndTransformerArchivedAtIsNull(sensorCode)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                             "No existe un sensor registrado con código " + sensorCode + "."));
-            if (!"ACTIVE".equalsIgnoreCase(sensor.getStatus())) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT,
-                        "El sensor " + sensorCode + " no está activo.");
-            }
-            if (!sensor.getUnit().equals(request.unit().trim())) {
-                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                        "La unidad de " + sensorCode + " debe ser " + sensor.getUnit() + ".");
-            }
 
             ZonedDateTime timestamp = request.timestamp() == null ? now : request.timestamp();
-            if (timestamp.isAfter(now.plusMinutes(1))) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "La fecha de la lectura no puede estar más de un minuto en el futuro.");
-            }
-
-            pending.add(SensorReadingEntity.builder()
-                    .sensor(sensor)
-                    .value(request.value())
-                    .unit(sensor.getUnit())
-                    .timestamp(timestamp)
-                    .source("HARDWARE")
-                    .build());
+            pending.add(new ReadingInput(sensor, request.value(), request.unit().trim(), timestamp, "HARDWARE"));
         }
 
-        List<SensorReadingEntity> saved = readingRepository.saveAllAndFlush(pending);
-        List<SensorReadingDto> response = new ArrayList<>(saved.size());
-        for (SensorReadingEntity reading : saved) {
-            SensorEntity sensor = reading.getSensor();
-            var transformer = sensor.getTransformer();
-            SensorEvent event = SensorEvent.builder()
-                    .readingId(reading.getId())
-                    .sensorId(sensor.getId())
-                    .sensorCode(sensor.getCode())
-                    .sensorType(sensor.getType())
-                    .transformerId(transformer.getId())
-                    .transformerCode(transformer.getCode())
-                    .value(reading.getValue())
-                    .unit(reading.getUnit())
-                    .timestamp(reading.getTimestamp())
-                    .build();
-            sensorSubject.notifyObservers(event);
-            response.add(mapper.toDto(reading));
-        }
+        SensorReadingBatchEntity batch = new SensorReadingBatchEntity();
+        batch.setSource("HARDWARE");
+        batch.setReadingCount(pending.size());
+        batch.setStatus("RECEIVED");
+        readingBatchRepository.saveAndFlush(batch);
+
+        List<SensorReadingDto> response = readingHandler.handleBatch(pending).stream()
+                .map(mapper::toDto)
+                .toList();
+        batch.setStatus("PROCESSED");
+        batch.setProcessedAt(ZonedDateTime.now());
+        readingBatchRepository.save(batch);
         return response;
     }
 }

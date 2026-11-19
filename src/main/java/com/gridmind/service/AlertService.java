@@ -42,7 +42,7 @@ public class AlertService {
             return mapper.toDto(existing.get(0));
         }
 
-        TransformerEntity transformer = transformerRepository.findById(transformerId).orElse(null);
+        TransformerEntity transformer = transformerRepository.findByIdAndArchivedAtIsNull(transformerId).orElse(null);
         if (transformer == null) return null;
 
         AlertEntity alert = AlertEntity.builder()

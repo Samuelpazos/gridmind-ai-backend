@@ -26,14 +26,17 @@ public class ClaudeExplanationService {
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ClaudeRequestBudget requestBudget;
     private final String apiKey;
     private final String model;
 
     public ClaudeExplanationService(
             RestClient.Builder restClientBuilder,
+            ClaudeRequestBudget requestBudget,
             @Value("${claude.api-key:}") String apiKey,
             @Value("${claude.model:claude-sonnet-4-5}") String model) {
         this.restClient = restClientBuilder.baseUrl("https://api.anthropic.com").build();
+        this.requestBudget = requestBudget;
         this.apiKey = apiKey;
         this.model = model;
     }
@@ -44,6 +47,10 @@ public class ClaudeExplanationService {
 
     public String getModel() {
         return model;
+    }
+
+    public int getRemainingRequests() {
+        return requestBudget.getRemainingRequests();
     }
 
     public String explain(AlertDto alert) {
@@ -140,6 +147,7 @@ public class ClaudeExplanationService {
     }
 
     private JsonNode sendRequest(Map<String, Object> request, String operation) {
+        requestBudget.reserveRequest();
         try {
             JsonNode response = restClient.post()
                     .uri("/v1/messages")

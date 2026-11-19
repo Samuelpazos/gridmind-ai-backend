@@ -1,6 +1,7 @@
 package com.gridmind.dto;
 
 import com.gridmind.domain.GridStatus;
+import com.gridmind.domain.TransformerAssetType;
 import lombok.*;
 
 import java.time.ZonedDateTime;
@@ -16,6 +17,7 @@ public class AlertDto {
     private String transformerCode;
     private String transformerName;
     private String substationName;
+    private TransformerAssetType assetType;
     private GridStatus severity;
     private String message;
     private Boolean acknowledged;

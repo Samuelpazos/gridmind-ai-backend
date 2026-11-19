@@ -56,12 +56,37 @@ public class SecurityConfig {
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/health", "/error", "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**")
                         .permitAll()
-                        .requestMatchers("/api/auth/csrf", "/api/auth/register", "/api/auth/login")
+                        .requestMatchers("/api/auth/csrf", "/api/auth/register", "/api/auth/login",
+                                "/api/auth/demo-login")
+                        .permitAll()
+                        .requestMatchers("/api/demo/config")
                         .permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/telemetry/readings")
                         .permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/grid/substations", "/api/grid/transformers")
+                        .hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/grid/transformers/archived")
+                        .hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PATCH, "/api/grid/transformers/**")
+                        .hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/grid/transformers/**")
+                        .hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/grid/transformers/*/restore")
+                        .hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/config/simulator")
+                        .hasAnyRole("ADMIN", "OPERATOR", "DEMO")
+                        .requestMatchers("/api/config/strategy", "/api/config/simulator")
+                        .hasAnyRole("ADMIN", "DEMO")
                         .requestMatchers("/api/config/**")
                         .hasRole("ADMIN")
+                        .requestMatchers("/api/catalogs/**", "/api/users/**", "/api/admin/**")
+                        .hasRole("ADMIN")
+                        .requestMatchers("/api/auth/logout")
+                        .authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/**")
+                        .hasAnyRole("ADMIN", "OPERATOR", "DEMO")
+                        .requestMatchers("/api/**")
+                        .hasAnyRole("ADMIN", "OPERATOR", "DEMO")
                         .anyRequest()
                         .authenticated())
                 .formLogin(form -> form.disable())
@@ -113,7 +138,7 @@ public class SecurityConfig {
                 .map(String::trim)
                 .filter(origin -> !origin.isEmpty())
                 .toList());
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"));
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"));
         configuration.setAllowedHeaders(List.of("Content-Type", "X-XSRF-TOKEN", "X-Device-Token"));
         configuration.setAllowCredentials(true);
 

@@ -8,6 +8,7 @@ import com.gridmind.entity.TransformerEntity;
 import com.gridmind.mapper.EntityDtoMapper;
 import com.gridmind.repository.MaintenanceRecommendationRepository;
 import com.gridmind.repository.TransformerRepository;
+import com.gridmind.state.StateContext;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,7 +37,7 @@ public class MaintenanceService {
 
     @Transactional
     public MaintenanceDto createRecommendation(String transformerId, String text) {
-        TransformerEntity transformer = transformerRepository.findById(transformerId)
+        TransformerEntity transformer = transformerRepository.findByIdAndArchivedAtIsNull(transformerId)
                 .orElseThrow(() -> new IllegalArgumentException("Transformer not found: " + transformerId));
 
         MaintenanceRecommendationEntity entity = MaintenanceRecommendationEntity.builder()
@@ -69,7 +70,8 @@ public class MaintenanceService {
         // Reset transformer status back to NORMAL if maintenance completed!
         TransformerEntity transformer = rec.getTransformer();
         if (transformer != null) {
-            transformer.setStatus(GridStatus.NORMAL);
+            StateContext stateContext = new StateContext(transformer.getStatus());
+            transformer.setStatus(stateContext.evaluate(0.06, true));
             transformer.setRiskLevel(RiskLevel.LOW);
             transformer.setFailureProbability(0.06);
             transformer.setPriorityScore(6.0);

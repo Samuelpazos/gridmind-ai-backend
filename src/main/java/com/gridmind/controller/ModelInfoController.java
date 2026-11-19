@@ -26,19 +26,29 @@ public class ModelInfoController {
     @GetMapping
     @Operation(summary = "Obtener información y métricas de desempeño del modelo ML")
     public ResponseEntity<ModelInfoDto> getModelInfo() {
+        boolean fallbackActive = aiConfigService.isForceDegradedMode() || !smileMlService.isModelTrained();
+        String fallbackReason = aiConfigService.isForceDegradedMode()
+                ? "MODO DEGRADADO ACTIVADO: evaluación mediante reglas de umbral."
+                : smileMlService.isModelTrained()
+                ? "Operación normal con IA."
+                : "El modelo no está disponible; se usarán reglas de umbral.";
         return ResponseEntity.ok(ModelInfoDto.builder()
                 .modelName("Smile Random Forest Classifier & Isolation Forest (Java Native ML)")
                 .anomalyDetectorName("Smile Isolation Forest Anomaly Engine")
                 .precision(smileMlService.getModelPrecision())
-                .recall(smileMlService.getModelRecall()) // > 85% requirement met
+                .recall(smileMlService.getModelRecall())
                 .f1Score(smileMlService.getModelF1Score())
                 .rocAuc(smileMlService.getModelRocAuc())
+                .modelTrained(smileMlService.isModelTrained())
+                .trainingError(smileMlService.getTrainingError())
                 .trainingSamplesCount(smileMlService.getTrainingDatasetSize())
+                .testSamplesCount(smileMlService.getTestDatasetSize())
+                .confusionMatrix(smileMlService.getConfusionMatrix())
                 .seedUsed(42L)
                 .featureImportances(smileMlService.getFeatureImportances())
                 .activeStrategy(aiConfigService.getActiveStrategyName())
-                .fallbackActive(aiConfigService.isForceDegradedMode())
-                .fallbackReason(aiConfigService.isForceDegradedMode() ? "MODO DEGRADADO ACTIVADO: evaluación mediante reglas de umbral." : "Operación normal con IA.")
+                .fallbackActive(fallbackActive)
+                .fallbackReason(fallbackReason)
                 .build());
     }
 }

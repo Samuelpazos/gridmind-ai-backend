@@ -3,11 +3,10 @@ package com.gridmind.security;
 import com.gridmind.domain.UserRole;
 import com.gridmind.dto.AuthUserDto;
 import com.gridmind.dto.RegisterRequestDto;
-import com.gridmind.entity.AuthBootstrapEntity;
 import com.gridmind.entity.UserAccountEntity;
-import com.gridmind.repository.AuthBootstrapRepository;
 import com.gridmind.repository.UserAccountRepository;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,22 +17,23 @@ import java.util.Locale;
 public class AuthService {
 
     private final UserAccountRepository accountRepository;
-    private final AuthBootstrapRepository bootstrapRepository;
     private final PasswordEncoder passwordEncoder;
+    private final boolean registrationEnabled;
 
     public AuthService(
             UserAccountRepository accountRepository,
-            AuthBootstrapRepository bootstrapRepository,
-            PasswordEncoder passwordEncoder) {
+            PasswordEncoder passwordEncoder,
+            @Value("${auth.registration.enabled:true}") boolean registrationEnabled) {
         this.accountRepository = accountRepository;
-        this.bootstrapRepository = bootstrapRepository;
         this.passwordEncoder = passwordEncoder;
+        this.registrationEnabled = registrationEnabled;
     }
 
     @Transactional
     public AuthUserDto register(RegisterRequestDto request) {
-        AuthBootstrapEntity bootstrap = bootstrapRepository.lockBootstrapRecord()
-                .orElseThrow(() -> new IllegalStateException("Authentication bootstrap record is missing."));
+        if (!registrationEnabled) {
+            throw new RegistrationDisabledException();
+        }
         String email = request.email().trim().toLowerCase(Locale.ROOT);
 
         if (accountRepository.existsByEmail(email)) {
@@ -44,9 +44,7 @@ public class AuthService {
         account.setDisplayName(request.displayName().trim());
         account.setEmail(email);
         account.setPasswordHash(passwordEncoder.encode(request.password()));
-        account.setRole(!bootstrap.isBootstrapComplete() && accountRepository.count() == 0
-                ? UserRole.ADMIN
-                : UserRole.OPERATOR);
+        account.setRole(UserRole.OPERATOR);
 
         try {
             accountRepository.saveAndFlush(account);
@@ -54,9 +52,6 @@ public class AuthService {
             throw new EmailAlreadyRegisteredException();
         }
 
-        if (!bootstrap.isBootstrapComplete()) {
-            bootstrap.setBootstrapComplete(true);
-        }
         return AuthUserDto.from(GridMindPrincipal.from(account));
     }
 }

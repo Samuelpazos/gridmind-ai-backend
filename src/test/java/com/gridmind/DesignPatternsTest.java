@@ -4,20 +4,25 @@ import com.gridmind.command.*;
 import com.gridmind.domain.GridStatus;
 import com.gridmind.domain.RiskLevel;
 import com.gridmind.entity.AlertEntity;
+import com.gridmind.entity.CommandLogEntity;
+import com.gridmind.entity.CommandSnapshotEntity;
 import com.gridmind.entity.TransformerEntity;
 import com.gridmind.factory.IndustrialGridFactory;
 import com.gridmind.factory.UrbanGridFactory;
 import com.gridmind.repository.AlertRepository;
 import com.gridmind.repository.CommandLogRepository;
+import com.gridmind.repository.CommandSnapshotRepository;
 import com.gridmind.repository.MaintenanceRecommendationRepository;
 import com.gridmind.repository.TransformerRepository;
 import com.gridmind.state.*;
 import com.gridmind.strategy.EvaluationResult;
 import com.gridmind.strategy.ThresholdStrategy;
 import com.gridmind.strategy.WeightedAgeStrategy;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -42,6 +47,9 @@ public class DesignPatternsTest {
 
     @Mock
     private CommandLogRepository commandLogRepository;
+
+    @Mock
+    private CommandSnapshotRepository commandSnapshotRepository;
 
     @Test
     @DisplayName("State Pattern: Test transitions NORMAL -> WARNING -> CRITICAL -> FAILED -> NORMAL")
@@ -68,6 +76,14 @@ public class DesignPatternsTest {
         // Exit FAILED back to NORMAL after maintenance completed
         GridStatus s5 = context.evaluate(0.05, true);
         assertEquals(GridStatus.NORMAL, s5);
+    }
+
+    @Test
+    @DisplayName("State Pattern: Completed maintenance restores a critical transformer to NORMAL")
+    void testMaintenanceRecoversCriticalState() {
+        StateContext context = new StateContext(GridStatus.CRITICAL);
+
+        assertEquals(GridStatus.NORMAL, context.evaluate(0.06, true));
     }
 
     @Test
@@ -128,22 +144,122 @@ public class DesignPatternsTest {
                 .priorityScore(5.0)
                 .build();
 
-        when(transformerRepository.findById("t-123")).thenReturn(Optional.of(transformer));
+        when(transformerRepository.findByIdAndArchivedAtIsNull("t-123"))
+                .thenReturn(Optional.of(transformer));
         when(transformerRepository.save(any(TransformerEntity.class))).thenAnswer(i -> i.getArguments()[0]);
 
-        CommandInvoker invoker = new CommandInvoker(commandLogRepository);
+        ArgumentCaptor<CommandLogEntity> logCaptor = ArgumentCaptor.forClass(CommandLogEntity.class);
+        ArgumentCaptor<CommandSnapshotEntity> snapshotCaptor = ArgumentCaptor.forClass(CommandSnapshotEntity.class);
+        when(commandLogRepository.save(any(CommandLogEntity.class))).thenAnswer(invocation -> {
+            CommandLogEntity log = invocation.getArgument(0);
+            if (log.getId() == null) log.setId("command-log-1");
+            return log;
+        });
+        when(commandSnapshotRepository.save(any(CommandSnapshotEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        CommandInvoker invoker = new CommandInvoker(
+                commandLogRepository, commandSnapshotRepository, new ObjectMapper());
         GridCommand command = new SimulateFailureCommand(transformerRepository, "t-123");
 
         // Execute Command
         invoker.executeCommand(command, "t-123", "param", "OPERATOR");
         assertEquals(GridStatus.FAILED, transformer.getStatus());
         assertEquals(RiskLevel.CRITICAL, transformer.getRiskLevel());
+        verify(commandLogRepository).save(logCaptor.capture());
+        verify(commandSnapshotRepository).save(snapshotCaptor.capture());
+        CommandLogEntity savedLog = logCaptor.getValue();
+        CommandSnapshotEntity snapshot = snapshotCaptor.getValue();
+        assertNotNull(snapshot.getMementoState());
+        assertSame(savedLog, snapshot.getCommandLog());
+        when(commandSnapshotRepository
+                .findFirstByCommandLog_ExecutedByAndConsumedAtIsNullOrderByCreatedAtDesc("OPERATOR"))
+                .thenReturn(Optional.of(snapshot));
+        doReturn(Optional.empty()).when(commandSnapshotRepository)
+                .findFirstByCommandLog_ExecutedByAndConsumedAtIsNullOrderByCreatedAtDesc("OTHER_OPERATOR");
+        assertFalse(invoker.undoLastCommand("OTHER_OPERATOR",
+                log -> new SimulateFailureCommand(transformerRepository, log.getTargetId())));
+        assertEquals(GridStatus.FAILED, transformer.getStatus());
 
         // Undo Command (Restores snapshot via Memento)
-        boolean undone = invoker.undoLastCommand();
+        boolean undone = invoker.undoLastCommand("OPERATOR",
+                log -> new SimulateFailureCommand(transformerRepository, log.getTargetId()));
         assertTrue(undone);
         assertEquals(GridStatus.NORMAL, transformer.getStatus());
         assertEquals(RiskLevel.LOW, transformer.getRiskLevel());
+    }
+
+    @Test
+    @DisplayName("Memento snapshots are persisted for maintenance commands")
+    void persistsAndRestoresScheduledMaintenanceSnapshot() {
+        TransformerEntity transformer = TransformerEntity.builder().id("t-456").build();
+        when(transformerRepository.findByIdAndArchivedAtIsNull("t-456"))
+                .thenReturn(Optional.of(transformer));
+        when(maintenanceRepository.save(any())).thenAnswer(invocation -> {
+            var recommendation = invocation.getArgument(0,
+                    com.gridmind.entity.MaintenanceRecommendationEntity.class);
+            recommendation.setId("maintenance-1");
+            return recommendation;
+        });
+        when(commandLogRepository.save(any(CommandLogEntity.class))).thenAnswer(invocation -> {
+            CommandLogEntity log = invocation.getArgument(0);
+            if (log.getId() == null) log.setId("command-log-maintenance");
+            return log;
+        });
+        when(commandSnapshotRepository.save(any(CommandSnapshotEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        CommandInvoker invoker = new CommandInvoker(
+                commandLogRepository, commandSnapshotRepository, new ObjectMapper());
+        invoker.executeCommand(new ScheduleMaintenanceCommand(
+                transformerRepository, maintenanceRepository, "t-456", "Inspección"),
+                "t-456", "{}", "OPERATOR");
+
+        ArgumentCaptor<CommandSnapshotEntity> snapshotCaptor =
+                ArgumentCaptor.forClass(CommandSnapshotEntity.class);
+        verify(commandSnapshotRepository).save(snapshotCaptor.capture());
+        assertTrue(snapshotCaptor.getValue().getMementoState().contains("maintenance-1"));
+        when(commandSnapshotRepository
+                .findFirstByCommandLog_ExecutedByAndConsumedAtIsNullOrderByCreatedAtDesc("OPERATOR"))
+                .thenReturn(Optional.of(snapshotCaptor.getValue()));
+
+        assertTrue(invoker.undoLastCommand("OPERATOR", log -> new ScheduleMaintenanceCommand(
+                transformerRepository, maintenanceRepository, log.getTargetId(), "Inspección")));
+        verify(maintenanceRepository).deleteById("maintenance-1");
+    }
+
+    @Test
+    @DisplayName("Memento snapshots are persisted for alert acknowledgment commands")
+    void persistsAndRestoresAcknowledgmentSnapshot() {
+        AlertEntity alert = AlertEntity.builder()
+                .id("alert-456")
+                .severity(GridStatus.WARNING)
+                .acknowledged(false)
+                .build();
+        when(alertRepository.findById("alert-456")).thenReturn(Optional.of(alert));
+        when(alertRepository.save(any(AlertEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(commandLogRepository.save(any(CommandLogEntity.class))).thenAnswer(invocation -> {
+            CommandLogEntity log = invocation.getArgument(0);
+            if (log.getId() == null) log.setId("command-log-alert");
+            return log;
+        });
+        when(commandSnapshotRepository.save(any(CommandSnapshotEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        CommandInvoker invoker = new CommandInvoker(
+                commandLogRepository, commandSnapshotRepository, new ObjectMapper());
+        invoker.executeCommand(new AcknowledgeAlertCommand(alertRepository, "alert-456", "OPERATOR"),
+                "alert-456", "{}", "OPERATOR");
+        assertTrue(alert.getAcknowledged());
+
+        ArgumentCaptor<CommandSnapshotEntity> snapshotCaptor =
+                ArgumentCaptor.forClass(CommandSnapshotEntity.class);
+        verify(commandSnapshotRepository).save(snapshotCaptor.capture());
+        assertTrue(snapshotCaptor.getValue().getMementoState().contains("\"acknowledged\":false"));
+        when(commandSnapshotRepository
+                .findFirstByCommandLog_ExecutedByAndConsumedAtIsNullOrderByCreatedAtDesc("OPERATOR"))
+                .thenReturn(Optional.of(snapshotCaptor.getValue()));
+
+        assertTrue(invoker.undoLastCommand("OPERATOR",
+                log -> new AcknowledgeAlertCommand(alertRepository, log.getTargetId(), "OPERATOR")));
+        assertFalse(alert.getAcknowledged());
     }
 
     @Test

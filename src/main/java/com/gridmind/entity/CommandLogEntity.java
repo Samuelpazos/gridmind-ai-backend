@@ -34,6 +34,9 @@ public class CommandLogEntity {
 
     private Boolean undoable;
 
+    @Column(name = "memento_state", columnDefinition = "TEXT")
+    private String mementoState;
+
     @PrePersist
     public void prePersist() {
         if (id == null) id = java.util.UUID.randomUUID().toString();

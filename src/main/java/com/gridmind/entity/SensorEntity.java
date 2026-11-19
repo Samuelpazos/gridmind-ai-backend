@@ -31,6 +31,10 @@ public class SensorEntity {
     @Column(nullable = false)
     private SensorType type;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "sensor_type_id")
+    private SensorTypeCatalogEntity sensorTypeCatalog;
+
     @Column(nullable = false)
     private String unit;
 

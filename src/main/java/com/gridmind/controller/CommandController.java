@@ -4,7 +4,9 @@ import com.gridmind.dto.CommandRequestDto;
 import com.gridmind.service.CommandService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -22,15 +24,16 @@ public class CommandController {
 
     @PostMapping("/execute")
     @Operation(summary = "Ejecutar un comando (SIMULATE_FAILURE, SCHEDULE_MAINTENANCE, ACKNOWLEDGE_ALERT)")
-    public ResponseEntity<Map<String, String>> executeCommand(@RequestBody CommandRequestDto request) {
-        commandService.executeCommand(request);
+    public ResponseEntity<Map<String, String>> executeCommand(
+            @Valid @RequestBody CommandRequestDto request, Authentication authentication) {
+        commandService.executeCommand(request, authentication.getName());
         return ResponseEntity.ok(Map.of("status", "SUCCESS", "message", "Comando ejecutado: " + request.getCommandName()));
     }
 
     @PostMapping("/undo")
     @Operation(summary = "Deshacer el último comando ejecutable (Patrón Memento)")
-    public ResponseEntity<Map<String, String>> undoCommand() {
-        boolean success = commandService.undoLastCommand();
+    public ResponseEntity<Map<String, String>> undoCommand(Authentication authentication) {
+        boolean success = commandService.undoLastCommand(authentication.getName());
         if (success) {
             return ResponseEntity.ok(Map.of("status", "SUCCESS", "message", "Último comando deshecho correctamente."));
         } else {

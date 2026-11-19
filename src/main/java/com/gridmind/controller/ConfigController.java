@@ -1,12 +1,17 @@
 package com.gridmind.controller;
 
+import com.gridmind.dto.GridProvisioningRequestDto;
 import com.gridmind.dto.SimulatorConfigDto;
+import com.gridmind.dto.SubstationDto;
 import com.gridmind.dto.StrategyConfigDto;
 import com.gridmind.service.AiConfigService;
+import com.gridmind.service.GridProvisioningService;
 import com.gridmind.simulation.SensorSimulator;
 import com.gridmind.simulation.SimulationScenario;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -17,10 +22,19 @@ public class ConfigController {
 
     private final AiConfigService aiConfigService;
     private final SensorSimulator sensorSimulator;
+    private final GridProvisioningService gridProvisioningService;
 
-    public ConfigController(AiConfigService aiConfigService, SensorSimulator sensorSimulator) {
+    public ConfigController(AiConfigService aiConfigService, SensorSimulator sensorSimulator,
+                            GridProvisioningService gridProvisioningService) {
         this.aiConfigService = aiConfigService;
         this.sensorSimulator = sensorSimulator;
+        this.gridProvisioningService = gridProvisioningService;
+    }
+
+    @PostMapping("/grid")
+    @Operation(summary = "Crear una subestación, un transformador y sus sensores con Abstract Factory")
+    public ResponseEntity<SubstationDto> provisionGrid(@Valid @RequestBody GridProvisioningRequestDto request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(gridProvisioningService.provision(request));
     }
 
     @PutMapping("/strategy")

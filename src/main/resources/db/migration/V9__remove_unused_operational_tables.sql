@@ -1,0 +1,11 @@
+DROP TRIGGER IF EXISTS trg_sync_user_role_assignment ON user_accounts;
+DROP FUNCTION IF EXISTS sync_user_role_assignment();
+DROP TABLE IF EXISTS role_permissions;
+DROP TABLE IF EXISTS user_roles;
+DROP TABLE IF EXISTS roles;
+DROP TABLE IF EXISTS permissions;
+DROP TABLE IF EXISTS alert_notifications;
+DROP TABLE IF EXISTS work_orders;
+DROP TABLE IF EXISTS maintenance_tasks;
+DROP TABLE IF EXISTS maintenance_plans;
+DROP TABLE IF EXISTS auth_bootstrap;

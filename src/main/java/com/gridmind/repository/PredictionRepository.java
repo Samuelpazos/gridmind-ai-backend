@@ -3,10 +3,14 @@ package com.gridmind.repository;
 import com.gridmind.entity.PredictionEntity;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+import java.time.ZonedDateTime;
 
 @Repository
 public interface PredictionRepository extends JpaRepository<PredictionEntity, String> {
@@ -17,4 +21,8 @@ public interface PredictionRepository extends JpaRepository<PredictionEntity, St
         List<PredictionEntity> list = findByTransformerIdOrderByEvaluatedAtDesc(transformerId);
         return list.isEmpty() ? Optional.empty() : Optional.of(list.get(0));
     }
+
+    @Modifying
+    @Query("DELETE FROM PredictionEntity p WHERE p.evaluatedAt < :cutoff")
+    int deleteOlderThan(@Param("cutoff") ZonedDateTime cutoff);
 }

@@ -9,9 +9,12 @@ import com.gridmind.observer.SensorEvent;
 import com.gridmind.observer.SensorObserver;
 import com.gridmind.observer.SensorSubject;
 import com.gridmind.repository.SensorReadingRepository;
+import com.gridmind.repository.SensorReadingBatchRepository;
 import com.gridmind.repository.SensorRepository;
 import com.gridmind.service.HardwareTelemetryService;
 import com.gridmind.simulation.SensorSimulator;
+import com.gridmind.telemetry.TelemetryValidationChain;
+import com.gridmind.telemetry.ReadingHandler;
 import com.gridmind.dto.HardwareReadingRequestDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -43,6 +46,8 @@ class HardwareTelemetryServiceTest {
     @Mock
     private SensorReadingRepository readingRepository;
     @Mock
+    private SensorReadingBatchRepository readingBatchRepository;
+    @Mock
     private SensorSimulator sensorSimulator;
 
     private SensorSubject sensorSubject;
@@ -54,10 +59,11 @@ class HardwareTelemetryServiceTest {
         sensorSubject = new SensorSubject();
         service = new HardwareTelemetryService(
                 sensorRepository,
+                readingBatchRepository,
                 readingRepository,
-                sensorSubject,
                 new EntityDtoMapper(),
                 sensorSimulator,
+                new ReadingHandler(readingRepository, sensorSubject, new TelemetryValidationChain()),
                 DEVICE_TOKEN
         );
         TransformerEntity transformer = TransformerEntity.builder()
@@ -77,7 +83,8 @@ class HardwareTelemetryServiceTest {
     @Test
     void storesHardwareReadingAndNotifiesObservers() {
         when(sensorSimulator.isActive()).thenReturn(false);
-        when(sensorRepository.findByCode("SN-001-TMP")).thenReturn(Optional.of(sensor));
+        when(sensorRepository.findByCodeAndTransformerArchivedAtIsNull("SN-001-TMP"))
+                .thenReturn(Optional.of(sensor));
         when(readingRepository.saveAllAndFlush(anyList())).thenAnswer(invocation -> {
             List<SensorReadingEntity> saved = invocation.getArgument(0);
             saved.forEach(SensorReadingEntity::prePersist);
@@ -93,6 +100,11 @@ class HardwareTelemetryServiceTest {
         assertEquals(1, result.size());
         assertEquals("HARDWARE", result.get(0).getSource());
         assertEquals("SN-001-TMP", result.get(0).getSensorCode());
+        var batchCaptor = ArgumentCaptor.forClass(com.gridmind.entity.SensorReadingBatchEntity.class);
+        verify(readingBatchRepository).saveAndFlush(batchCaptor.capture());
+        verify(readingBatchRepository).save(batchCaptor.capture());
+        assertEquals("PROCESSED", batchCaptor.getValue().getStatus());
+        assertEquals(1, batchCaptor.getValue().getReadingCount());
         ArgumentCaptor<SensorEvent> eventCaptor = ArgumentCaptor.forClass(SensorEvent.class);
         verify(observer).onSensorReading(eventCaptor.capture());
         assertEquals("SN-001-TMP", eventCaptor.getValue().getSensorCode());
@@ -113,10 +125,11 @@ class HardwareTelemetryServiceTest {
     void rejectsRequestsWhenDeviceTokenHasNotBeenConfigured() {
         HardwareTelemetryService unconfiguredService = new HardwareTelemetryService(
                 sensorRepository,
+                readingBatchRepository,
                 readingRepository,
-                sensorSubject,
                 new EntityDtoMapper(),
                 sensorSimulator,
+                new ReadingHandler(readingRepository, sensorSubject, new TelemetryValidationChain()),
                 ""
         );
 
@@ -144,9 +157,38 @@ class HardwareTelemetryServiceTest {
     }
 
     @Test
+    void reportsMixedRecentSourcesAndLastHardwareReadingTime() {
+        ZonedDateTime lastHardwareReading = ZonedDateTime.now().minusMinutes(2);
+        when(sensorSimulator.isActive()).thenReturn(false);
+        when(readingRepository.findDistinctSourcesBetween(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(List.of("SIMULATION", "HARDWARE"));
+        when(readingRepository.findFirstBySourceOrderByTimestampDesc("HARDWARE"))
+                .thenReturn(Optional.of(SensorReadingEntity.builder().timestamp(lastHardwareReading).build()));
+
+        var status = service.getStatus();
+
+        assertEquals("MIXED", status.recentDataSource());
+        assertEquals(lastHardwareReading, status.lastHardwareReadingAt());
+    }
+
+    @Test
+    void reportsSimulationWhenOnlySimulatedReadingsAreRecent() {
+        when(sensorSimulator.isActive()).thenReturn(true);
+        when(readingRepository.findDistinctSourcesBetween(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(List.of("SIMULATION"));
+        when(readingRepository.findFirstBySourceOrderByTimestampDesc("HARDWARE"))
+                .thenReturn(Optional.empty());
+
+        assertEquals("SIMULATION", service.getStatus().recentDataSource());
+    }
+
+    @Test
     void validatesTheWholeBatchBeforePersistingAnyReading() {
         when(sensorSimulator.isActive()).thenReturn(false);
-        when(sensorRepository.findByCode("SN-001-TMP")).thenReturn(Optional.of(sensor));
+        when(sensorRepository.findByCodeAndTransformerArchivedAtIsNull("SN-001-TMP"))
+                .thenReturn(Optional.of(sensor));
         SensorEntity secondSensor = SensorEntity.builder()
                 .id("sensor-2")
                 .code("SC-001-TMP")
@@ -155,7 +197,8 @@ class HardwareTelemetryServiceTest {
                 .status("ACTIVE")
                 .transformer(sensor.getTransformer())
                 .build();
-        when(sensorRepository.findByCode("SC-001-TMP")).thenReturn(Optional.of(secondSensor));
+        when(sensorRepository.findByCodeAndTransformerArchivedAtIsNull("SC-001-TMP"))
+                .thenReturn(Optional.of(secondSensor));
 
         ResponseStatusException error = assertThrows(
                 ResponseStatusException.class,

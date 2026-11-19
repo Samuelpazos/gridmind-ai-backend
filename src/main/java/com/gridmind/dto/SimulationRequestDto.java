@@ -13,6 +13,6 @@ public class SimulationRequestDto {
     private String transformerId;
     @NotNull
     private String variableModified; // TEMPERATURE, VOLTAGE, CURRENT, VIBRATION
-    @NotNull
-    private Double deltaPercent; // e.g. +30.0 for 30% increase
+    private Double deltaPercent;
+    private Double targetValue;
 }

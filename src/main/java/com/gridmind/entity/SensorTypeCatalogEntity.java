@@ -9,15 +9,17 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
-@Table(name = "auth_bootstrap")
+@Table(name = "sensor_types")
 @Getter
 @Setter
 @NoArgsConstructor
-public class AuthBootstrapEntity {
-
+public class SensorTypeCatalogEntity {
     @Id
-    private Integer id;
-
-    @Column(name = "bootstrap_complete", nullable = false)
-    private boolean bootstrapComplete;
+    private String id;
+    private String code;
+    private String name;
+    @Column(name = "default_unit")
+    private String defaultUnit;
+    private String description;
+    private boolean active;
 }

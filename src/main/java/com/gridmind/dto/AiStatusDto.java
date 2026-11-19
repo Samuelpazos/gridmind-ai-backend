@@ -9,4 +9,5 @@ public class AiStatusDto {
     private boolean enabled;
     private String provider;
     private String model;
+    private int remainingRequests;
 }

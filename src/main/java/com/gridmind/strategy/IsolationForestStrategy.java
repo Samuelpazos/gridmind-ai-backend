@@ -4,6 +4,8 @@ import com.gridmind.ai.SmileMlService;
 import com.gridmind.domain.RiskLevel;
 import com.gridmind.entity.TransformerEntity;
 import org.springframework.context.annotation.Lazy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -12,6 +14,8 @@ import java.util.Map;
 
 @Component("ISOLATION_FOREST_STRATEGY")
 public class IsolationForestStrategy implements EvaluationStrategy {
+
+    private static final Logger log = LoggerFactory.getLogger(IsolationForestStrategy.class);
 
     private final SmileMlService mlService;
 
@@ -53,8 +57,8 @@ public class IsolationForestStrategy implements EvaluationStrategy {
                     .strategyName(getStrategyName())
                     .fallbackUsed(false)
                     .build();
-        } catch (Exception e) {
-            // RNF-08 Fallback to ThresholdStrategy
+        } catch (RuntimeException e) {
+            log.error("Isolation Forest evaluation failed; using threshold fallback", e);
             ThresholdStrategy fallback = new ThresholdStrategy();
             EvaluationResult res = fallback.evaluate(transformer, sensorValues);
             res.setFallbackUsed(true);

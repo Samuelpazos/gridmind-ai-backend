@@ -2,6 +2,7 @@ package com.gridmind.service;
 
 import com.gridmind.domain.GridStatus;
 import com.gridmind.domain.RiskLevel;
+import com.gridmind.domain.SubstationNode;
 import com.gridmind.dto.*;
 import com.gridmind.entity.*;
 import com.gridmind.mapper.EntityDtoMapper;
@@ -9,6 +10,7 @@ import com.gridmind.repository.*;
 import com.gridmind.state.StateContext;
 import com.gridmind.strategy.EvaluationResult;
 import com.gridmind.strategy.EvaluationStrategy;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,35 +26,41 @@ public class GridMonitoringService {
     private final SensorRepository sensorRepository;
     private final SensorReadingRepository readingRepository;
     private final PredictionRepository predictionRepository;
+    private final AnomalyRepository anomalyRepository;
     private final AlertRepository alertRepository;
     private final AiConfigService aiConfigService;
     private final AlertService alertService;
     private final HistoryService historyService;
     private final EntityDtoMapper mapper;
     private final SimpMessagingTemplate messagingTemplate;
+    private final double anomalyScoreThreshold;
 
     public GridMonitoringService(SubstationRepository substationRepository,
                                  TransformerRepository transformerRepository,
                                  SensorRepository sensorRepository,
                                  SensorReadingRepository readingRepository,
                                  PredictionRepository predictionRepository,
+                                 AnomalyRepository anomalyRepository,
                                  AlertRepository alertRepository,
                                  AiConfigService aiConfigService,
                                  AlertService alertService,
                                  HistoryService historyService,
                                  EntityDtoMapper mapper,
-                                 SimpMessagingTemplate messagingTemplate) {
+                                 SimpMessagingTemplate messagingTemplate,
+                                 @Value("${gridmind.ml.anomaly.threshold:0.7}") double anomalyScoreThreshold) {
         this.substationRepository = substationRepository;
         this.transformerRepository = transformerRepository;
         this.sensorRepository = sensorRepository;
         this.readingRepository = readingRepository;
         this.predictionRepository = predictionRepository;
+        this.anomalyRepository = anomalyRepository;
         this.alertRepository = alertRepository;
         this.aiConfigService = aiConfigService;
         this.alertService = alertService;
         this.historyService = historyService;
         this.mapper = mapper;
         this.messagingTemplate = messagingTemplate;
+        this.anomalyScoreThreshold = anomalyScoreThreshold;
     }
 
     @Transactional(readOnly = true)
@@ -60,8 +68,14 @@ public class GridMonitoringService {
         List<SubstationEntity> substations = substationRepository.findAll();
         return substations.stream().map(substation -> {
             SubstationDto subDto = mapper.toDto(substation);
+            SubstationNode componentTree = new SubstationNode(substation);
+            subDto.setStatus(componentTree.getStatus());
             if (subDto.getTransformers() != null) {
                 for (TransformerDto transDto : subDto.getTransformers()) {
+                    componentTree.getChildren().stream()
+                            .filter(component -> component.getId().equals(transDto.getId()))
+                            .findFirst()
+                            .ifPresent(component -> transDto.setStatus(component.getStatus()));
                     // Enrich latest reading for sensors & latest prediction
                     enrichTransformerDto(transDto);
                 }
@@ -83,7 +97,7 @@ public class GridMonitoringService {
 
     @Transactional
     public void analyzeTransformerOnNewReading(String transformerId) {
-        TransformerEntity transformer = transformerRepository.findById(transformerId).orElse(null);
+        TransformerEntity transformer = transformerRepository.findByIdAndArchivedAtIsNull(transformerId).orElse(null);
         if (transformer == null) return;
 
         List<SensorEntity> sensors = sensorRepository.findByTransformerId(transformerId);
@@ -97,6 +111,15 @@ public class GridMonitoringService {
 
         EvaluationStrategy strategy = aiConfigService.getActiveStrategy();
         EvaluationResult result = strategy.evaluate(transformer, sensorValues);
+        if (result.getAnomalyScore() != null
+                && result.getAnomalyScore() >= anomalyScoreThreshold) {
+            anomalyRepository.save(AnomalyEntity.builder()
+                    .transformer(transformer)
+                    .anomalyScore(result.getAnomalyScore())
+                    .strategyUsed(result.getStrategyName())
+                    .details(String.join("; ", result.getTopFactors()))
+                    .build());
+        }
 
         // Update transformer metrics
         transformer.setFailureProbability(result.getFailureProbability());
@@ -153,11 +176,7 @@ public class GridMonitoringService {
         SubstationEntity sub = substationRepository.findById(substationId).orElse(null);
         if (sub == null) return;
 
-        List<TransformerEntity> transformers = transformerRepository.findBySubstationId(substationId);
-        GridStatus worstStatus = GridStatus.NORMAL;
-        for (TransformerEntity t : transformers) {
-            worstStatus = GridStatus.worstOf(worstStatus, t.getStatus());
-        }
+        GridStatus worstStatus = new SubstationNode(sub).getStatus();
 
         if (sub.getStatus() != worstStatus) {
             sub.setStatus(worstStatus);
@@ -168,10 +187,10 @@ public class GridMonitoringService {
     @Transactional(readOnly = true)
     public GridSummaryDto getGridSummary() {
         long totalSubs = substationRepository.count();
-        long totalTransformers = transformerRepository.count();
-        long activeSensors = sensorRepository.count();
+        long totalTransformers = transformerRepository.countByArchivedAtIsNull();
+        long activeSensors = sensorRepository.countByTransformerArchivedAtIsNull();
 
-        List<TransformerEntity> transformers = transformerRepository.findAll();
+        List<TransformerEntity> transformers = transformerRepository.findAllByArchivedAtIsNull();
         long normal = transformers.stream().filter(t -> t.getStatus() == GridStatus.NORMAL).count();
         long warning = transformers.stream().filter(t -> t.getStatus() == GridStatus.WARNING).count();
         long critical = transformers.stream().filter(t -> t.getStatus() == GridStatus.CRITICAL).count();

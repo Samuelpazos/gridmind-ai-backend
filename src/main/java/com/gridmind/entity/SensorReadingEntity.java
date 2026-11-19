@@ -32,7 +32,7 @@ public class SensorReadingEntity {
 
     @Column(nullable = false, length = 20)
     @Builder.Default
-    private String source = "SIMULATED";
+    private String source = "SIMULATION";
 
     @PrePersist
     public void prePersist() {

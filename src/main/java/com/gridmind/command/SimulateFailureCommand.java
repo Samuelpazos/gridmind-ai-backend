@@ -5,6 +5,9 @@ import com.gridmind.domain.RiskLevel;
 import com.gridmind.entity.TransformerEntity;
 import com.gridmind.repository.TransformerRepository;
 
+import java.util.HashMap;
+import java.util.Map;
+
 public class SimulateFailureCommand implements GridCommand {
 
     private final TransformerRepository transformerRepository;
@@ -23,7 +26,7 @@ public class SimulateFailureCommand implements GridCommand {
 
     @Override
     public void execute() {
-        TransformerEntity transformer = transformerRepository.findById(transformerId)
+        TransformerEntity transformer = transformerRepository.findByIdAndArchivedAtIsNull(transformerId)
                 .orElseThrow(() -> new IllegalArgumentException("Transformer not found: " + transformerId));
 
         // Create Memento snapshot
@@ -45,17 +48,49 @@ public class SimulateFailureCommand implements GridCommand {
     }
 
     @Override
+    public Map<String, Object> createMemento() {
+        if (memento == null) {
+            throw new IllegalStateException("No se puede guardar el memento antes de ejecutar el comando.");
+        }
+        Map<String, Object> state = new HashMap<>();
+        state.put("transformerId", memento.getTransformerId());
+        state.put("status", memento.getStatus().name());
+        state.put("riskLevel", memento.getRiskLevel().name());
+        state.put("failureProbability", memento.getFailureProbability());
+        state.put("priorityScore", memento.getPriorityScore());
+        return state;
+    }
+
+    @Override
     public void undo() {
         if (memento != null) {
-            TransformerEntity transformer = transformerRepository.findById(transformerId).orElse(null);
-            if (transformer != null) {
-                transformer.setStatus(memento.getStatus());
-                transformer.setRiskLevel(memento.getRiskLevel());
-                transformer.setFailureProbability(memento.getFailureProbability());
-                transformer.setPriorityScore(memento.getPriorityScore());
-                transformerRepository.save(transformer);
-            }
+            restore(memento);
         }
+    }
+
+    @Override
+    public void undo(Map<String, Object> state) {
+        Object savedId = state.get("transformerId");
+        if (!transformerId.equals(savedId)) {
+            throw new IllegalArgumentException("El memento no corresponde al transformador del comando.");
+        }
+        restore(TransformerMemento.builder()
+                .transformerId(transformerId)
+                .status(GridStatus.valueOf((String) state.get("status")))
+                .riskLevel(RiskLevel.valueOf((String) state.get("riskLevel")))
+                .failureProbability(((Number) state.get("failureProbability")).doubleValue())
+                .priorityScore(((Number) state.get("priorityScore")).doubleValue())
+                .build());
+    }
+
+    private void restore(TransformerMemento snapshot) {
+        TransformerEntity transformer = transformerRepository.findByIdAndArchivedAtIsNull(transformerId)
+                .orElseThrow(() -> new IllegalArgumentException("Transformer not found: " + transformerId));
+        transformer.setStatus(snapshot.getStatus());
+        transformer.setRiskLevel(snapshot.getRiskLevel());
+        transformer.setFailureProbability(snapshot.getFailureProbability());
+        transformer.setPriorityScore(snapshot.getPriorityScore());
+        transformerRepository.save(transformer);
     }
 
     @Override

@@ -26,8 +26,14 @@ public class SimulationEntity {
     @Column(name = "variable_modified", nullable = false)
     private String variableModified;
 
-    @Column(name = "delta_percent", nullable = false)
+    @Column(name = "delta_percent")
     private Double deltaPercent;
+
+    @Column(name = "original_value")
+    private Double originalValue;
+
+    @Column(name = "simulated_value")
+    private Double simulatedValue;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "original_risk", nullable = false)

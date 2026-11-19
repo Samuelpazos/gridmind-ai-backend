@@ -7,23 +7,53 @@ import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import smile.anomaly.IsolationForest;
+import smile.base.cart.SplitRule;
+import smile.classification.RandomForest;
+import smile.data.DataFrame;
+import smile.data.Tuple;
+import smile.data.formula.Formula;
+import smile.data.measure.NominalScale;
+import smile.data.type.DataTypes;
+import smile.data.type.StructType;
+import smile.data.type.StructField;
+import smile.data.vector.DoubleVector;
+import smile.data.vector.IntVector;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.LongStream;
 
 @Service
 public class SmileMlService {
 
     private static final Logger log = LoggerFactory.getLogger(SmileMlService.class);
+    private static final int DATASET_SIZE = 2_500;
+    private static final int RANDOM_FOREST_TREES = 200;
+    private static final int ISOLATION_FOREST_TREES = 100;
+    private static final double FAILURE_DECISION_THRESHOLD = 0.20;
+    private static final String[] DISPLAY_FEATURE_NAMES = {
+            "Temperatura", "Voltaje", "Corriente", "Vibración", "Edad del Transformador"
+    };
 
     private final SyntheticDatasetGenerator datasetGenerator;
-
-    private boolean modelTrained = false;
-    private double modelPrecision = 0.89;
-    private double modelRecall = 0.91; // Guaranteed > 85% requirement
-    private double modelF1Score = 0.90;
-    private double modelRocAuc = 0.94;
-    private int trainingDatasetSize = 2500;
-    private final Map<String, Double> featureImportances = new LinkedHashMap<>();
+    private volatile RandomForest classifier;
+    private volatile IsolationForest anomalyDetector;
+    private volatile StructType inputSchema;
+    private volatile boolean modelTrained;
+    private volatile double modelPrecision;
+    private volatile double modelRecall;
+    private volatile double modelF1Score;
+    private volatile double modelRocAuc;
+    private volatile int trainingSamplesCount;
+    private volatile int testSamplesCount;
+    private volatile int[][] confusionMatrix = new int[2][2];
+    private volatile String trainingError;
+    private volatile Map<String, Double> featureImportances = Map.of();
 
     public SmileMlService(SyntheticDatasetGenerator datasetGenerator) {
         this.datasetGenerator = datasetGenerator;
@@ -35,105 +65,104 @@ public class SmileMlService {
     }
 
     public synchronized void trainModelsOnStartup() {
-        log.info("GridMind AI: Training Smile Random Forest & Isolation Forest ML models on reproducible synthetic dataset (Seed 42)...");
-        List<SyntheticDatasetGenerator.DatasetSample> samples = datasetGenerator.generateSyntheticDataset(trainingDatasetSize);
+        modelTrained = false;
+        trainingError = null;
+        try {
+            List<SyntheticDatasetGenerator.DatasetSample> samples =
+                    datasetGenerator.generateSyntheticDataset(DATASET_SIZE);
+            DatasetSplit split = stratifiedSplit(samples);
 
-        // Calculate feature importances based on variance & label correlation
-        featureImportances.put("Temperatura", 0.38);
-        featureImportances.put("Vibración", 0.29);
-        featureImportances.put("Corriente", 0.18);
-        featureImportances.put("Edad del Transformador", 0.11);
-        featureImportances.put("Voltaje", 0.04);
+            DataFrame trainingData = toDataFrame(split.training());
+            inputSchema = trainingData.schema();
+            classifier = RandomForest.fit(
+                    Formula.lhs("failureLabel"),
+                    trainingData,
+                    RANDOM_FOREST_TREES,
+                    2,
+                    SplitRule.GINI,
+                    20,
+                    100,
+                    1,
+                    0.7,
+                    null,
+                    LongStream.range(
+                            SyntheticDatasetGenerator.FIXED_SEED,
+                            SyntheticDatasetGenerator.FIXED_SEED + RANDOM_FOREST_TREES
+                    )
+            );
 
-        // Evaluate model metrics over dataset
-        int tp = 0, fp = 0, fn = 0, tn = 0;
-        for (SyntheticDatasetGenerator.DatasetSample sample : samples) {
-            double prob = calculateProbabilityInternal(sample.temperature(), sample.voltage(), sample.current(), sample.vibration(), sample.ageYears());
-            int pred = prob >= 0.50 ? 1 : 0;
-            int actual = sample.failureLabel();
+            double[][] normalSamples = samples.stream()
+                    .filter(sample -> sample.scenario() == SyntheticDatasetGenerator.Scenario.NORMAL)
+                    .map(SmileMlService::toFeatureVector)
+                    .toArray(double[][]::new);
+            anomalyDetector = IsolationForest.fit(
+                    normalSamples,
+                    ISOLATION_FOREST_TREES,
+                    Math.min(256, normalSamples.length),
+                    0.99,
+                    0
+            );
 
-            if (pred == 1 && actual == 1) tp++;
-            else if (pred == 1 && actual == 0) fp++;
-            else if (pred == 0 && actual == 1) fn++;
-            else if (pred == 0 && actual == 0) tn++;
+            calculateMetrics(split.test());
+            calculateFeatureImportances();
+            trainingSamplesCount = split.training().size();
+            testSamplesCount = split.test().size();
+            modelTrained = true;
+
+            log.info("Smile models trained on {} samples; test precision={}, recall={}, F1={}, ROC-AUC={}, confusion matrix={}",
+                    samples.size(), modelPrecision, modelRecall, modelF1Score, modelRocAuc,
+                    formatConfusionMatrix(confusionMatrix));
+        } catch (RuntimeException exception) {
+            classifier = null;
+            anomalyDetector = null;
+            featureImportances = Map.of();
+            trainingError = exception.getMessage();
+            log.error("Smile model training failed; supervised and anomaly strategies will use degraded mode",
+                    exception);
         }
-
-        this.modelPrecision = tp + fp > 0 ? (double) tp / (tp + fp) : 0.89;
-        this.modelRecall = tp + fn > 0 ? (double) tp / (tp + fn) : 0.91;
-        this.modelF1Score = 2 * (modelPrecision * modelRecall) / (modelPrecision + modelRecall);
-        this.modelRocAuc = 0.945;
-        this.modelTrained = true;
-
-        log.info("GridMind AI ML Models Trained Successfully. Precision: {}%, Recall: {}%, F1: {}%, ROC-AUC: {}",
-                String.format("%.2f", modelPrecision * 100),
-                String.format("%.2f", modelRecall * 100),
-                String.format("%.2f", modelF1Score * 100),
-                String.format("%.3f", modelRocAuc));
     }
 
     public double calculateAnomalyScore(TransformerEntity transformer, Map<String, Double> sensorValues) {
-        double temp = sensorValues.getOrDefault("TEMPERATURE", 50.0);
-        double vib = sensorValues.getOrDefault("VIBRATION", 1.0);
-        double curr = sensorValues.getOrDefault("CURRENT", 250.0);
-        double volt = sensorValues.getOrDefault("VOLTAGE", 13.8);
-
-        // Statistical z-score anomaly estimation
-        double tempZ = Math.abs(temp - 50.0) / 10.0;
-        double vibZ = Math.abs(vib - 1.2) / 0.8;
-        double currZ = Math.abs(curr - 230.0) / 50.0;
-        double voltZ = Math.abs(volt - 13.8) / 0.4;
-
-        double maxZ = Math.max(Math.max(tempZ, vibZ), Math.max(currZ, voltZ));
-        return Math.min(0.99, Math.max(0.05, maxZ / 4.0));
+        IsolationForest detector = requireAnomalyDetector();
+        return detector.score(toFeatureVector(
+                sensorValues.getOrDefault("TEMPERATURE", 50.0),
+                sensorValues.getOrDefault("VOLTAGE", 13.8),
+                sensorValues.getOrDefault("CURRENT", 250.0),
+                sensorValues.getOrDefault("VIBRATION", 1.0),
+                ageOf(transformer)
+        ));
     }
 
-    public EvaluationResult predictFailureProbability(TransformerEntity transformer, Map<String, Double> sensorValues) {
-        double temp = sensorValues.getOrDefault("TEMPERATURE", 50.0);
-        double volt = sensorValues.getOrDefault("VOLTAGE", 13.8);
-        double curr = sensorValues.getOrDefault("CURRENT", 250.0);
-        double vib = sensorValues.getOrDefault("VIBRATION", 1.0);
-        double age = transformer != null && transformer.getAgeYears() != null ? transformer.getAgeYears() : 5.0;
+    public EvaluationResult predictFailureProbability(
+            TransformerEntity transformer,
+            Map<String, Double> sensorValues
+    ) {
+        RandomForest model = requireClassifier();
+        double[] features = toFeatureVector(
+                sensorValues.getOrDefault("TEMPERATURE", 50.0),
+                sensorValues.getOrDefault("VOLTAGE", 13.8),
+                sensorValues.getOrDefault("CURRENT", 250.0),
+                sensorValues.getOrDefault("VIBRATION", 1.0),
+                ageOf(transformer)
+        );
+        double[] posteriori = new double[model.numClasses()];
+        model.predict(toTuple(features), posteriori);
+        double probability = positiveClassProbability(model, posteriori);
+        RiskLevel risk = RiskLevel.fromProbability(probability);
+        double anomalyScore = calculateAnomalyScore(transformer, sensorValues);
 
-        double prob = calculateProbabilityInternal(temp, volt, curr, vib, age);
-
-        // Reference Demo Scenario requirement check:
-        // Temp=87, Volt=13.8, Curr=420, Vib high (>4.0), Age=14 -> Risk=HIGH, Probability 70%-85%, Rec="Inspeccionar el sistema de refrigeración del transformador."
-        if (Math.abs(temp - 87.0) < 2.0 && Math.abs(curr - 420.0) < 30.0 && age >= 12) {
-            prob = 0.78; // Exact 78% within required 70-85% window
-        }
-
-        RiskLevel risk = RiskLevel.fromProbability(prob);
-
-        List<String> topFactors = new ArrayList<>();
-        if (temp > 80.0) topFactors.add("1. Temperatura elevada (" + temp + " °C)");
-        else if (temp > 70.0) topFactors.add("1. Temperatura por encima del rango óptimo (" + temp + " °C)");
-
-        if (vib > 3.5) topFactors.add("2. Vibración alta (" + vib + " mm/s)");
-        else if (vib > 2.0) topFactors.add("2. Vibración moderada (" + vib + " mm/s)");
-
-        if (age > 10) topFactors.add("3. Edad del transformador (" + (int) age + " años)");
-
-        if (curr > 380.0) topFactors.add("4. Corriente elevada (" + curr + " A)");
-
-        if (topFactors.isEmpty()) {
-            topFactors.add("1. Operación dentro de parámetros estadísticos normales");
-        }
-
-        String explanation;
-        if (temp > 80.0 && vib > 3.5 && age > 10) {
-            explanation = "El transformador presenta temperatura y vibración superiores a los valores normales y tiene una antigüedad elevada.";
-        } else if (risk == RiskLevel.HIGH || risk == RiskLevel.CRITICAL) {
-            explanation = "El modelo detectó una alta probabilidad de falla debido a estrés acumulado térmico y vibracional.";
-        } else if (risk == RiskLevel.MEDIUM) {
-            explanation = "Se identificó una degradación moderada en los parámetros de operación.";
-        } else {
-            explanation = "Operación estable sin signos significativos de fallo inminente.";
-        }
+        List<String> topFactors = explainFactors(sensorValues, ageOf(transformer), risk);
+        String explanation = switch (risk) {
+            case HIGH, CRITICAL ->
+                    "El modelo detectó una probabilidad elevada de falla según los patrones aprendidos.";
+            case MEDIUM -> "El modelo detectó señales de degradación que requieren seguimiento.";
+            default -> "El modelo no detectó señales significativas de falla inminente.";
+        };
 
         return EvaluationResult.builder()
-                .failureProbability(prob)
+                .failureProbability(probability)
                 .riskLevel(risk)
-                .anomalyScore(prob * 0.85)
+                .anomalyScore(anomalyScore)
                 .topFactors(topFactors)
                 .explanation(explanation)
                 .strategyName("SUPERVISED_MODEL_RANDOM_FOREST")
@@ -141,39 +170,219 @@ public class SmileMlService {
                 .build();
     }
 
-    private double calculateProbabilityInternal(double temp, double volt, double curr, double vib, double age) {
-        double score = 0.02;
+    private void calculateMetrics(List<SyntheticDatasetGenerator.DatasetSample> testSamples) {
+        int[][] matrix = new int[2][2];
+        List<ScoredLabel> scores = new ArrayList<>(testSamples.size());
+        RandomForest model = requireClassifier();
 
-        // Temperature contribution (weight ~0.38)
-        if (temp > 95.0) score += 0.45;
-        else if (temp > 85.0) score += 0.35;
-        else if (temp > 75.0) score += 0.20;
-        else if (temp > 65.0) score += 0.10;
+        for (SyntheticDatasetGenerator.DatasetSample sample : testSamples) {
+            double[] posteriori = new double[model.numClasses()];
+            int modelPrediction = model.predict(toTuple(toFeatureVector(sample)), posteriori);
+            int prediction = modelPrediction == 1
+                    || positiveClassProbability(model, posteriori) >= FAILURE_DECISION_THRESHOLD ? 1 : 0;
+            int actual = sample.failureLabel();
+            matrix[actual][prediction]++;
+            scores.add(new ScoredLabel(actual, positiveClassProbability(model, posteriori)));
+        }
 
-        // Vibration contribution (weight ~0.29)
-        if (vib > 6.0) score += 0.30;
-        else if (vib > 4.0) score += 0.20;
-        else if (vib > 2.5) score += 0.10;
+        int truePositive = matrix[1][1];
+        int falsePositive = matrix[0][1];
+        int falseNegative = matrix[1][0];
+        modelPrecision = ratio(truePositive, truePositive + falsePositive);
+        modelRecall = ratio(truePositive, truePositive + falseNegative);
+        modelF1Score = ratio(2 * modelPrecision * modelRecall, modelPrecision + modelRecall);
+        modelRocAuc = calculateRocAuc(scores);
+        confusionMatrix = matrix;
+    }
 
-        // Current contribution (weight ~0.18)
-        if (curr > 500.0) score += 0.20;
-        else if (curr > 400.0) score += 0.12;
-        else if (curr > 300.0) score += 0.05;
+    private void calculateFeatureImportances() {
+        double[] importances = requireClassifier().importance();
+        double total = 0.0;
+        for (double importance : importances) {
+            total += importance;
+        }
 
-        // Age contribution (weight ~0.11)
-        if (age > 15) score += 0.12;
-        else if (age > 10) score += 0.07;
-        else if (age > 5) score += 0.03;
+        Map<String, Double> calculated = new LinkedHashMap<>();
+        for (int i = 0; i < importances.length && i < DISPLAY_FEATURE_NAMES.length; i++) {
+            calculated.put(
+                    DISPLAY_FEATURE_NAMES[i],
+                    total == 0.0 ? 0.0 : importances[i] / total
+            );
+        }
+        featureImportances = Collections.unmodifiableMap(calculated);
+    }
 
-        // Voltage anomaly contribution (weight ~0.04)
-        double voltDev = Math.abs(volt - 13.8);
-        if (voltDev > 1.0) score += 0.08;
+    private static double calculateRocAuc(List<ScoredLabel> scores) {
+        long positives = scores.stream().filter(score -> score.label() == 1).count();
+        long negatives = scores.size() - positives;
+        if (positives == 0 || negatives == 0) {
+            return 0.0;
+        }
 
-        return Math.min(0.98, Math.max(0.01, score));
+        List<ScoredLabel> sorted = scores.stream()
+                .sorted(Comparator.comparingDouble(ScoredLabel::score))
+                .toList();
+        double positiveRankSum = 0.0;
+        int start = 0;
+        while (start < sorted.size()) {
+            int end = start + 1;
+            while (end < sorted.size()
+                    && Double.compare(sorted.get(start).score(), sorted.get(end).score()) == 0) {
+                end++;
+            }
+            double averageRank = ((start + 1) + end) / 2.0;
+            for (int i = start; i < end; i++) {
+                if (sorted.get(i).label() == 1) {
+                    positiveRankSum += averageRank;
+                }
+            }
+            start = end;
+        }
+
+        return (positiveRankSum - positives * (positives + 1.0) / 2.0) / (positives * negatives);
+    }
+
+    private static DatasetSplit stratifiedSplit(List<SyntheticDatasetGenerator.DatasetSample> samples) {
+        Map<Integer, List<SyntheticDatasetGenerator.DatasetSample>> byLabel = new LinkedHashMap<>();
+        for (SyntheticDatasetGenerator.DatasetSample sample : samples) {
+            byLabel.computeIfAbsent(sample.failureLabel(), ignored -> new ArrayList<>()).add(sample);
+        }
+
+        List<SyntheticDatasetGenerator.DatasetSample> training = new ArrayList<>();
+        List<SyntheticDatasetGenerator.DatasetSample> test = new ArrayList<>();
+        for (Map.Entry<Integer, List<SyntheticDatasetGenerator.DatasetSample>> entry : byLabel.entrySet()) {
+            List<SyntheticDatasetGenerator.DatasetSample> classSamples = entry.getValue();
+            Collections.shuffle(classSamples, new java.util.Random(
+                    SyntheticDatasetGenerator.FIXED_SEED + entry.getKey()
+            ));
+            int split = Math.max(1, (int) Math.floor(classSamples.size() * 0.8));
+            training.addAll(classSamples.subList(0, split));
+            test.addAll(classSamples.subList(split, classSamples.size()));
+        }
+        Collections.shuffle(training, new java.util.Random(SyntheticDatasetGenerator.FIXED_SEED));
+        Collections.shuffle(test, new java.util.Random(SyntheticDatasetGenerator.FIXED_SEED + 1));
+        return new DatasetSplit(training, test);
+    }
+
+    private static DataFrame toDataFrame(List<SyntheticDatasetGenerator.DatasetSample> samples) {
+        return DataFrame.of(
+                DoubleVector.of("temperature", samples.stream().mapToDouble(
+                        SyntheticDatasetGenerator.DatasetSample::temperature).toArray()),
+                DoubleVector.of("voltage", samples.stream().mapToDouble(
+                        SyntheticDatasetGenerator.DatasetSample::voltage).toArray()),
+                DoubleVector.of("current", samples.stream().mapToDouble(
+                        SyntheticDatasetGenerator.DatasetSample::current).toArray()),
+                DoubleVector.of("vibration", samples.stream().mapToDouble(
+                        SyntheticDatasetGenerator.DatasetSample::vibration).toArray()),
+                DoubleVector.of("ageYears", samples.stream().mapToDouble(
+                        SyntheticDatasetGenerator.DatasetSample::ageYears).toArray()),
+                IntVector.of(
+                        new StructField(
+                                "failureLabel",
+                                DataTypes.IntegerType,
+                                new NominalScale("normal", "failure")
+                        ),
+                        samples.stream().mapToInt(
+                                SyntheticDatasetGenerator.DatasetSample::failureLabel).toArray()
+                )
+        );
+    }
+
+    private static double positiveClassProbability(RandomForest model, double[] posteriori) {
+        int[] classes = model.classes();
+        for (int i = 0; i < classes.length; i++) {
+            if (classes[i] == 1) {
+                return posteriori[i];
+            }
+        }
+        throw new IllegalStateException("El modelo no contiene la clase positiva de falla.");
+    }
+
+    private static List<String> explainFactors(
+            Map<String, Double> sensorValues,
+            double age,
+            RiskLevel risk
+    ) {
+        List<String> factors = new ArrayList<>();
+        double temperature = sensorValues.getOrDefault("TEMPERATURE", 50.0);
+        double vibration = sensorValues.getOrDefault("VIBRATION", 1.0);
+        double current = sensorValues.getOrDefault("CURRENT", 250.0);
+        if (temperature > 70.0) factors.add("Temperatura elevada (" + temperature + " °C)");
+        if (vibration > 2.0) factors.add("Vibración elevada (" + vibration + " mm/s)");
+        if (current > 300.0) factors.add("Corriente elevada (" + current + " A)");
+        if (age > 10.0) factors.add("Antigüedad del transformador (" + (int) age + " años)");
+        if (factors.isEmpty() && risk == RiskLevel.LOW) {
+            factors.add("Operación dentro de parámetros normales");
+        }
+        return factors;
+    }
+
+    private static double[] toFeatureVector(SyntheticDatasetGenerator.DatasetSample sample) {
+        return toFeatureVector(
+                sample.temperature(),
+                sample.voltage(),
+                sample.current(),
+                sample.vibration(),
+                sample.ageYears()
+        );
+    }
+
+    private static double[] toFeatureVector(
+            double temperature,
+            double voltage,
+            double current,
+            double vibration,
+            double ageYears
+    ) {
+        return new double[]{temperature, voltage, current, vibration, ageYears};
+    }
+
+    private Tuple toTuple(double[] features) {
+        StructType schema = inputSchema;
+        if (schema == null) {
+            throw new IllegalStateException("El esquema de entrada del modelo no está disponible.");
+        }
+        return Tuple.of(new Object[]{
+                features[0], features[1], features[2], features[3], features[4], 0
+        }, schema);
+    }
+
+    private static double ratio(double numerator, double denominator) {
+        return denominator == 0.0 ? 0.0 : numerator / denominator;
+    }
+
+    private static String formatConfusionMatrix(int[][] matrix) {
+        return String.format("[[%d,%d],[%d,%d]]", matrix[0][0], matrix[0][1], matrix[1][0], matrix[1][1]);
+    }
+
+    private static double ageOf(TransformerEntity transformer) {
+        return transformer != null && transformer.getAgeYears() != null
+                ? transformer.getAgeYears()
+                : 5.0;
+    }
+
+    private RandomForest requireClassifier() {
+        RandomForest model = classifier;
+        if (model == null) {
+            throw new IllegalStateException("El clasificador Smile no está disponible.", null);
+        }
+        return model;
+    }
+
+    private IsolationForest requireAnomalyDetector() {
+        IsolationForest detector = anomalyDetector;
+        if (detector == null) {
+            throw new IllegalStateException("El detector Smile no está disponible.", null);
+        }
+        return detector;
     }
 
     public boolean isModelTrained() {
         return modelTrained;
+    }
+
+    public String getTrainingError() {
+        return trainingError;
     }
 
     public double getModelPrecision() {
@@ -193,10 +402,25 @@ public class SmileMlService {
     }
 
     public int getTrainingDatasetSize() {
-        return trainingDatasetSize;
+        return trainingSamplesCount;
+    }
+
+    public int getTestDatasetSize() {
+        return testSamplesCount;
+    }
+
+    public int[][] getConfusionMatrix() {
+        return new int[][]{confusionMatrix[0].clone(), confusionMatrix[1].clone()};
     }
 
     public Map<String, Double> getFeatureImportances() {
         return featureImportances;
     }
+
+    private record DatasetSplit(
+            List<SyntheticDatasetGenerator.DatasetSample> training,
+            List<SyntheticDatasetGenerator.DatasetSample> test
+    ) {}
+
+    private record ScoredLabel(int label, double score) {}
 }

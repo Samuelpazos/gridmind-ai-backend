@@ -15,7 +15,10 @@ public class EntityDtoMapper {
     public SubstationDto toDto(SubstationEntity entity) {
         if (entity == null) return null;
         List<TransformerDto> transformers = entity.getTransformers() != null
-                ? entity.getTransformers().stream().map(this::toDto).collect(Collectors.toList())
+                ? entity.getTransformers().stream()
+                .filter(transformer -> transformer.getArchivedAt() == null)
+                .map(this::toDto)
+                .collect(Collectors.toList())
                 : Collections.emptyList();
 
         return SubstationDto.builder()
@@ -42,6 +45,7 @@ public class EntityDtoMapper {
                 .substationName(entity.getSubstation() != null ? entity.getSubstation().getName() : null)
                 .code(entity.getCode())
                 .name(entity.getName())
+                .assetType(entity.getAssetType())
                 .ratingKva(entity.getRatingKva())
                 .ageYears(entity.getAgeYears())
                 .maxTempC(entity.getMaxTempC())
@@ -51,6 +55,7 @@ public class EntityDtoMapper {
                 .riskLevel(entity.getRiskLevel())
                 .priorityScore(entity.getPriorityScore())
                 .createdAt(entity.getCreatedAt())
+                .archivedAt(entity.getArchivedAt())
                 .sensors(sensors)
                 .build();
     }
@@ -127,6 +132,7 @@ public class EntityDtoMapper {
                 .transformerCode(entity.getTransformer() != null ? entity.getTransformer().getCode() : null)
                 .transformerName(entity.getTransformer() != null ? entity.getTransformer().getName() : null)
                 .substationName(entity.getTransformer() != null && entity.getTransformer().getSubstation() != null ? entity.getTransformer().getSubstation().getName() : null)
+                .assetType(entity.getTransformer() != null ? entity.getTransformer().getAssetType() : null)
                 .severity(entity.getSeverity())
                 .message(entity.getMessage())
                 .acknowledged(entity.getAcknowledged())
@@ -158,11 +164,14 @@ public class EntityDtoMapper {
         return SimulationResultDto.builder()
                 .simulationId(entity.getId())
                 .transformerId(entity.getTransformer() != null ? entity.getTransformer().getId() : null)
+                .assetType(entity.getTransformer() != null ? entity.getTransformer().getAssetType() : null)
                 .transformerCode(entity.getTransformer() != null ? entity.getTransformer().getCode() : null)
                 .transformerName(entity.getTransformer() != null ? entity.getTransformer().getName() : null)
                 .substationName(entity.getTransformer() != null && entity.getTransformer().getSubstation() != null ? entity.getTransformer().getSubstation().getName() : null)
                 .variableModified(entity.getVariableModified())
                 .deltaPercent(entity.getDeltaPercent())
+                .originalValue(entity.getOriginalValue())
+                .simulatedValue(entity.getSimulatedValue())
                 .originalRisk(entity.getOriginalRisk())
                 .simulatedRisk(entity.getSimulatedRisk())
                 .originalProbability(entity.getOriginalProbability())

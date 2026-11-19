@@ -2,6 +2,7 @@ package com.gridmind.dto;
 
 import com.gridmind.domain.GridStatus;
 import com.gridmind.domain.RiskLevel;
+import com.gridmind.domain.TransformerAssetType;
 import lombok.*;
 
 import java.time.ZonedDateTime;
@@ -18,6 +19,7 @@ public class TransformerDto {
     private String substationName;
     private String code;
     private String name;
+    private TransformerAssetType assetType;
     private Double ratingKva;
     private Integer ageYears;
     private Double maxTempC;
@@ -27,6 +29,7 @@ public class TransformerDto {
     private RiskLevel riskLevel;
     private Double priorityScore;
     private ZonedDateTime createdAt;
+    private ZonedDateTime archivedAt;
     private List<SensorDto> sensors;
     private PredictionDto latestPrediction;
 }

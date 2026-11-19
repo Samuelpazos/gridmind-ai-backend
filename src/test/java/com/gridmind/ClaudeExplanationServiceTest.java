@@ -2,6 +2,7 @@ package com.gridmind;
 
 import com.gridmind.ai.ClaudeExplanationService;
 import com.gridmind.ai.ClaudeNotConfiguredException;
+import com.gridmind.ai.ClaudeRequestBudget;
 import com.gridmind.domain.GridStatus;
 import com.gridmind.domain.RiskLevel;
 import com.gridmind.dto.AlertDto;
@@ -30,7 +31,7 @@ class ClaudeExplanationServiceTest {
     void sendsAlertContextToClaudeAndReturnsExplanation() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        ClaudeExplanationService service = new ClaudeExplanationService(builder, "test-api-key", "claude-test-model");
+        ClaudeExplanationService service = createService(builder, "test-api-key");
 
         server.expect(requestTo("https://api.anthropic.com/v1/messages"))
                 .andExpect(method(HttpMethod.POST))
@@ -52,7 +53,7 @@ class ClaudeExplanationServiceTest {
     void doesNotCallClaudeWhenApiKeyIsMissing() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        ClaudeExplanationService service = new ClaudeExplanationService(builder, "", "claude-test-model");
+        ClaudeExplanationService service = createService(builder, "");
 
         assertFalse(service.isConfigured());
         assertThrows(ClaudeNotConfiguredException.class, () -> service.explain(referenceAlert()));
@@ -63,7 +64,7 @@ class ClaudeExplanationServiceTest {
     void doesNotCallClaudeForPredictionWhenApiKeyIsMissing() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        ClaudeExplanationService service = new ClaudeExplanationService(builder, "", "claude-test-model");
+        ClaudeExplanationService service = createService(builder, "");
 
         assertThrows(ClaudeNotConfiguredException.class, () -> service.predictFailure(
                 TransformerEntity.builder().code("T-REF").build(),
@@ -76,7 +77,7 @@ class ClaudeExplanationServiceTest {
     void predictsRiskFromCurrentSensorValuesAndDerivesRiskLevel() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        ClaudeExplanationService service = new ClaudeExplanationService(builder, "test-api-key", "claude-test-model");
+        ClaudeExplanationService service = createService(builder, "test-api-key");
         Map<String, Double> readings = Map.of(
                 "TEMPERATURE", 87.0,
                 "VOLTAGE", 13.8,
@@ -111,7 +112,7 @@ class ClaudeExplanationServiceTest {
     void parsesPredictionWhenClaudeWrapsJsonInMarkdownFence() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        ClaudeExplanationService service = new ClaudeExplanationService(builder, "test-api-key", "claude-test-model");
+        ClaudeExplanationService service = createService(builder, "test-api-key");
         server.expect(requestTo("https://api.anthropic.com/v1/messages"))
                 .andRespond(withSuccess("""
                         {"content":[{"type":"text","text":"```json\\n{\\"failureProbability\\":0.42,\\"topFactors\\":[\\"Vibración elevada\\"],\\"explanation\\":\\"La estimación es orientativa.\\"}\\n```"}],"stop_reason":"end_turn"}
@@ -132,7 +133,7 @@ class ClaudeExplanationServiceTest {
     void rejectsClaudeProbabilitiesOutsideTheValidRange() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        ClaudeExplanationService service = new ClaudeExplanationService(builder, "test-api-key", "claude-test-model");
+        ClaudeExplanationService service = createService(builder, "test-api-key");
         server.expect(requestTo("https://api.anthropic.com/v1/messages"))
                 .andRespond(withSuccess("""
                         {"content":[{"type":"text","text":"{\\"failureProbability\\":1.7,\\"topFactors\\":[\\"Factor\\"],\\"explanation\\":\\"Estimate\\"}"}],"stop_reason":"end_turn"}
@@ -155,5 +156,9 @@ class ClaudeExplanationServiceTest {
                 .message("Temperature exceeded the threshold.")
                 .source("SENSOR_OBSERVER")
                 .build();
+    }
+
+    private ClaudeExplanationService createService(RestClient.Builder builder, String apiKey) {
+        return new ClaudeExplanationService(builder, new ClaudeRequestBudget(20), apiKey, "claude-test-model");
     }
 }

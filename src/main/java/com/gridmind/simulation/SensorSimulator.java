@@ -1,20 +1,20 @@
 package com.gridmind.simulation;
 
 import com.gridmind.domain.SensorType;
+import com.gridmind.domain.TransformerAssetType;
 import com.gridmind.entity.SensorEntity;
-import com.gridmind.entity.SensorReadingEntity;
 import com.gridmind.entity.TransformerEntity;
-import com.gridmind.observer.SensorEvent;
-import com.gridmind.observer.SensorSubject;
-import com.gridmind.repository.SensorReadingRepository;
 import com.gridmind.repository.SensorRepository;
 import com.gridmind.repository.TransformerRepository;
+import com.gridmind.telemetry.ReadingHandler;
+import com.gridmind.telemetry.ReadingHandler.ReadingInput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.ZonedDateTime;
 import java.util.List;
@@ -26,9 +26,8 @@ public class SensorSimulator {
     private static final Logger log = LoggerFactory.getLogger(SensorSimulator.class);
 
     private final SensorRepository sensorRepository;
-    private final SensorReadingRepository readingRepository;
     private final TransformerRepository transformerRepository;
-    private final SensorSubject sensorSubject;
+    private final ReadingHandler readingHandler;
 
     @Value("${gridmind.simulator.enabled:true}")
     private volatile boolean active = true;
@@ -37,13 +36,11 @@ public class SensorSimulator {
     private final Random random = new Random();
 
     public SensorSimulator(SensorRepository sensorRepository,
-                           SensorReadingRepository readingRepository,
                            TransformerRepository transformerRepository,
-                           SensorSubject sensorSubject) {
+                           ReadingHandler readingHandler) {
         this.sensorRepository = sensorRepository;
-        this.readingRepository = readingRepository;
         this.transformerRepository = transformerRepository;
-        this.sensorSubject = sensorSubject;
+        this.readingHandler = readingHandler;
     }
 
     @Scheduled(fixedRate = 3000) // Telemetry tick every 3 seconds (<3s latency requirement)
@@ -52,35 +49,20 @@ public class SensorSimulator {
         if (!active) return;
 
         stepCount++;
-        List<SensorEntity> sensors = sensorRepository.findAll();
+        List<SensorEntity> sensors = sensorRepository
+                .findAllByTransformerAssetTypeAndTransformerArchivedAtIsNull(TransformerAssetType.TEST);
         if (sensors.isEmpty()) return;
 
         for (SensorEntity sensor : sensors) {
             double newValue = calculateSimulatedValue(sensor);
-            SensorReadingEntity reading = SensorReadingEntity.builder()
-                    .sensor(sensor)
-                    .value(newValue)
-                    .unit(sensor.getUnit())
-                    .timestamp(ZonedDateTime.now())
-                    .source("SIMULATED")
-                    .build();
-
-            reading = readingRepository.save(reading);
-
-            // Notify Observers
-            SensorEvent event = SensorEvent.builder()
-                    .readingId(reading.getId())
-                    .sensorId(sensor.getId())
-                    .sensorCode(sensor.getCode())
-                    .sensorType(sensor.getType())
-                    .transformerId(sensor.getTransformer() != null ? sensor.getTransformer().getId() : null)
-                    .transformerCode(sensor.getTransformer() != null ? sensor.getTransformer().getCode() : null)
-                    .value(newValue)
-                    .unit(sensor.getUnit())
-                    .timestamp(reading.getTimestamp())
-                    .build();
-
-            sensorSubject.notifyObservers(event);
+            ZonedDateTime timestamp = ZonedDateTime.now();
+            try {
+                readingHandler.handleBatch(List.of(new ReadingInput(
+                        sensor, newValue, sensor.getUnit(), timestamp, "SIMULATION")));
+            } catch (ResponseStatusException exception) {
+                log.warn("Skipping invalid simulated reading for sensor {}: {}",
+                        sensor.getCode(), exception.getReason());
+            }
         }
     }
 

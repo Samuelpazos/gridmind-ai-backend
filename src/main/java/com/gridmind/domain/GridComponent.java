@@ -11,6 +11,8 @@ public interface GridComponent {
     String getName();
     String getCode();
     GridStatus getStatus();
+    double getRiskScore();
+    int countComponents();
     List<GridComponent> getChildren();
     void addComponent(GridComponent component);
     void removeComponent(GridComponent component);

@@ -6,6 +6,7 @@ import com.gridmind.repository.MaintenanceRecommendationRepository;
 import com.gridmind.repository.TransformerRepository;
 
 import java.time.ZonedDateTime;
+import java.util.Map;
 
 public class ScheduleMaintenanceCommand implements GridCommand {
 
@@ -32,7 +33,7 @@ public class ScheduleMaintenanceCommand implements GridCommand {
 
     @Override
     public void execute() {
-        TransformerEntity transformer = transformerRepository.findById(transformerId)
+        TransformerEntity transformer = transformerRepository.findByIdAndArchivedAtIsNull(transformerId)
                 .orElseThrow(() -> new IllegalArgumentException("Transformer not found: " + transformerId));
 
         MaintenanceRecommendationEntity rec = MaintenanceRecommendationEntity.builder()
@@ -51,6 +52,23 @@ public class ScheduleMaintenanceCommand implements GridCommand {
         if (createdMaintenanceId != null) {
             maintenanceRepository.deleteById(createdMaintenanceId);
         }
+    }
+
+    @Override
+    public Map<String, Object> createMemento() {
+        if (createdMaintenanceId == null) {
+            throw new IllegalStateException("No se puede guardar el memento antes de ejecutar el comando.");
+        }
+        return Map.of("maintenanceId", createdMaintenanceId);
+    }
+
+    @Override
+    public void undo(Map<String, Object> memento) {
+        Object savedId = memento.get("maintenanceId");
+        if (!(savedId instanceof String id) || id.isBlank()) {
+            throw new IllegalArgumentException("El memento no contiene el identificador del mantenimiento.");
+        }
+        maintenanceRepository.deleteById(id);
     }
 
     @Override

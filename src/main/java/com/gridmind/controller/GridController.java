@@ -1,6 +1,7 @@
 package com.gridmind.controller;
 
 import com.gridmind.ai.ClaudeNotConfiguredException;
+import com.gridmind.ai.ClaudeQuotaExceededException;
 import com.gridmind.ai.ClaudePredictionService;
 import com.gridmind.ai.ClaudeServiceException;
 import com.gridmind.ai.IncompleteSensorDataException;
@@ -8,15 +9,12 @@ import com.gridmind.ai.TransformerNotFoundException;
 import com.gridmind.dto.*;
 import com.gridmind.entity.SensorReadingEntity;
 import com.gridmind.entity.TransformerEntity;
-import com.gridmind.factory.GridComponentFactory;
-import com.gridmind.factory.IndustrialGridFactory;
-import com.gridmind.factory.UrbanGridFactory;
 import com.gridmind.mapper.EntityDtoMapper;
 import com.gridmind.repository.SensorReadingRepository;
 import com.gridmind.repository.SensorRepository;
 import com.gridmind.repository.SubstationRepository;
 import com.gridmind.repository.TransformerRepository;
-import com.gridmind.service.GridMonitoringService;
+import com.gridmind.service.GridDashboardFacade;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.data.domain.PageRequest;
@@ -34,52 +32,52 @@ import java.util.stream.Collectors;
 @Tag(name = "Grid Monitoring", description = "Endpoints para el monitoreo de la red eléctrica")
 public class GridController {
 
-    private final GridMonitoringService monitoringService;
+    private final GridDashboardFacade dashboardFacade;
     private final TransformerRepository transformerRepository;
     private final SensorRepository sensorRepository;
     private final SensorReadingRepository readingRepository;
     private final SubstationRepository substationRepository;
     private final EntityDtoMapper mapper;
-    private final UrbanGridFactory urbanGridFactory;
-    private final IndustrialGridFactory industrialGridFactory;
     private final ClaudePredictionService claudePredictionService;
 
-    public GridController(GridMonitoringService monitoringService,
+    public GridController(GridDashboardFacade dashboardFacade,
                           TransformerRepository transformerRepository,
                           SensorRepository sensorRepository,
                           SensorReadingRepository readingRepository,
                           SubstationRepository substationRepository,
                           EntityDtoMapper mapper,
-                          UrbanGridFactory urbanGridFactory,
-                          IndustrialGridFactory industrialGridFactory,
                           ClaudePredictionService claudePredictionService) {
-        this.monitoringService = monitoringService;
+        this.dashboardFacade = dashboardFacade;
         this.transformerRepository = transformerRepository;
         this.sensorRepository = sensorRepository;
         this.readingRepository = readingRepository;
         this.substationRepository = substationRepository;
         this.mapper = mapper;
-        this.urbanGridFactory = urbanGridFactory;
-        this.industrialGridFactory = industrialGridFactory;
         this.claudePredictionService = claudePredictionService;
     }
 
     @GetMapping("/grid")
     @Operation(summary = "Obtener jerarquía completa de la red eléctrica")
     public ResponseEntity<List<SubstationDto>> getGrid() {
-        return ResponseEntity.ok(monitoringService.getFullGridHierarchy());
+        return ResponseEntity.ok(dashboardFacade.getSubstations());
     }
 
     @GetMapping("/grid/summary")
     @Operation(summary = "Obtener resumen estadístico del dashboard")
     public ResponseEntity<GridSummaryDto> getGridSummary() {
-        return ResponseEntity.ok(monitoringService.getGridSummary());
+        return ResponseEntity.ok(dashboardFacade.getSummary());
     }
 
     @GetMapping("/ranking")
     @Operation(summary = "Obtener ranking de riesgo priorizado por Riesgo x Impacto")
     public ResponseEntity<List<RiskRankingDto>> getRiskRanking() {
-        return ResponseEntity.ok(monitoringService.getRiskRanking());
+        return ResponseEntity.ok(dashboardFacade.getRiskRanking());
+    }
+
+    @GetMapping("/dashboard")
+    @Operation(summary = "Obtener una vista consolidada para el dashboard")
+    public ResponseEntity<DashboardOverviewDto> getDashboardOverview() {
+        return ResponseEntity.ok(dashboardFacade.getOverview());
     }
 
     @GetMapping("/components/{id}/readings")
@@ -92,7 +90,7 @@ public class GridController {
     @GetMapping("/components/{id}/risk")
     @Operation(summary = "Obtener evaluación de riesgo de un transformador")
     public ResponseEntity<TransformerDto> getComponentRisk(@PathVariable String id) {
-        TransformerEntity transformer = transformerRepository.findById(id)
+        TransformerEntity transformer = transformerRepository.findByIdAndArchivedAtIsNull(id)
                 .orElseThrow(() -> new IllegalArgumentException("Transformer not found: " + id));
         TransformerDto dto = mapper.toDto(transformer);
         return ResponseEntity.ok(dto);
@@ -103,6 +101,9 @@ public class GridController {
     public ResponseEntity<?> predictWithClaude(@PathVariable String id) {
         try {
             return ResponseEntity.ok(claudePredictionService.predictCurrentRisk(id));
+        } catch (ClaudeQuotaExceededException exception) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .body(Map.of("message", exception.getMessage()));
         } catch (ClaudeNotConfiguredException exception) {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                     .body(Map.of("message", "Claude no está configurado. Añade CLAUDE_API_KEY al entorno del backend y reinícialo."));

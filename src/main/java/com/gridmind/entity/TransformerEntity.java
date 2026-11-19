@@ -2,6 +2,7 @@ package com.gridmind.entity;
 
 import com.gridmind.domain.GridStatus;
 import com.gridmind.domain.RiskLevel;
+import com.gridmind.domain.TransformerAssetType;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -25,16 +26,25 @@ public class TransformerEntity {
     @JoinColumn(name = "substation_id", nullable = false)
     private SubstationEntity substation;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "model_id")
+    private TransformerModelEntity model;
+
     @Column(nullable = false, unique = true)
     private String code;
 
     @Column(nullable = false)
     private String name;
 
-    @Column(name = "rating_kva", nullable = false)
+    @Enumerated(EnumType.STRING)
+    @Column(name = "asset_type", nullable = false, length = 20)
+    @Builder.Default
+    private TransformerAssetType assetType = TransformerAssetType.TEST;
+
+    @Column(name = "rating_kva")
     private Double ratingKva;
 
-    @Column(name = "age_years", nullable = false)
+    @Column(name = "age_years")
     private Integer ageYears;
 
     @Column(name = "max_temp_c", nullable = false)
@@ -60,6 +70,9 @@ public class TransformerEntity {
     @Column(name = "created_at")
     private ZonedDateTime createdAt;
 
+    @Column(name = "archived_at")
+    private ZonedDateTime archivedAt;
+
     @OneToMany(mappedBy = "transformer", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Builder.Default
     private List<SensorEntity> sensors = new ArrayList<>();
@@ -71,9 +84,12 @@ public class TransformerEntity {
         if (status == null) status = GridStatus.NORMAL;
         if (failureProbability == null) failureProbability = 0.05;
         if (riskLevel == null) riskLevel = RiskLevel.LOW;
+        if (assetType == null) assetType = TransformerAssetType.TEST;
         if (priorityScore == null) priorityScore = 5.0;
-        if (ratingKva == null) ratingKva = 1000.0;
-        if (ageYears == null) ageYears = 5;
+        if (assetType == TransformerAssetType.TEST) {
+            if (ratingKva == null) ratingKva = 1000.0;
+            if (ageYears == null) ageYears = 5;
+        }
         if (maxTempC == null) maxTempC = 90.0;
         if (maxCurrentA == null) maxCurrentA = 500.0;
     }
