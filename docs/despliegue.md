@@ -7,3 +7,5 @@
 - Mantén `TELEMETRY_DEVICE_TOKEN` y las claves de servicios externos en la configuración secreta del proveedor.
 
 Antes de compartir la URL, verifica `GET /health`, inicia sesión como administrador por HTTPS y comprueba los atributos Secure y HttpOnly de la cookie de sesión.
+
+Usa [el ejemplo de variables de producción](../.env.production.example) como referencia y completa los valores privados en el proveedor.
