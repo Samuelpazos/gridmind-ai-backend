@@ -10,7 +10,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class SensorWarningThresholdsTest {
     @ParameterizedTest
     @CsvSource({
-        "TEMPERATURE,76"
+        "TEMPERATURE,76",
+        "VOLTAGE,"
     })
     void verifiesContract(SensorType type, Double expected) {
         assertEquals(expected, type.getWarningAlertThreshold());
