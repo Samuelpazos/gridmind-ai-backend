@@ -73,3 +73,7 @@ In the owner's session, read telemetry status after a known hardware batch. Veri
 ## BE-22 · Prediction inputs include demonstration provenance
 
 Configure a test double for Claude, request a prediction for a four-channel prototype and verify that the provider request identifies the demonstration channels.
+
+## BE-23 · Prefer physical input for prediction
+
+Provide both measured and demonstration readings for one channel in a disposable fixture. Verify that the provider request uses the measured value for that channel.
