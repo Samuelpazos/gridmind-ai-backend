@@ -153,6 +153,10 @@ class PostgresSchemaIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
         mvc.perform(get("/api/alerts").with(authentication(first)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$[0].message").value("Alerta privada"));
+        mvc.perform(post("/api/alerts/workspace-alert/ack").with(authentication(second)).with(csrf()))
+                .andExpect(status().isBadRequest());
+        assertEquals(false, jdbcTemplate.queryForObject(
+                "SELECT acknowledged FROM alerts WHERE id = 'workspace-alert'", Boolean.class));
         mvc.perform(get("/api/alerts").with(authentication(second)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
 
@@ -217,11 +221,16 @@ class PostgresSchemaIntegrationTest {
             String alertId = jdbcTemplate.queryForObject("""
                     SELECT id FROM alerts WHERE transformer_id = ? AND source = 'SENSOR_OBSERVER'
                     """, String.class, selected);
+            mvc.perform(get("/api/alerts").with(authentication(operator)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].readingSource").value("SIMULATION"))
+                    .andExpect(jsonPath("$[0].readingTimestamp").isString());
             mvc.perform(post("/api/alerts/{id}/assistant", alertId).with(authentication(operator)).with(csrf())
                             .contentType(MediaType.APPLICATION_JSON).content("{\"topic\":\"event\"}"))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.provider").value("Datos de GridMind"))
-                    .andExpect(jsonPath("$.readings[0].value").value(100));
+                                        .andExpect(jsonPath("$.triggeringReading.value").value(100))
+                    .andExpect(jsonPath("$.triggeringReading.source").value("SIMULATION"));
             mvc.perform(post("/api/alerts/{id}/assistant", alertId).with(authentication(other)).with(csrf())
                             .contentType(MediaType.APPLICATION_JSON).content("{\"topic\":\"event\"}"))
                     .andExpect(status().isNotFound());
@@ -268,6 +277,60 @@ class PostgresSchemaIntegrationTest {
                 .andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
     }
 
+
+    @Test
+    void maintenanceIsPrivateAndDuplicateSchedulingDoesNotReplaceUndoSnapshot() throws Exception {
+        var owner = operator("maintenance-owner@example.test");
+        var other = operator("maintenance-other@example.test");
+        String asset = addTestAsset(owner, "Equipo privado");
+        String command = """
+                {"commandName":"SCHEDULE_MAINTENANCE","targetId":"%s"}
+                """.formatted(asset);
+
+        mvc.perform(post("/api/commands/execute").with(authentication(owner)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(command))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.maintenance.transformerCode").isString())
+                .andExpect(jsonPath("$.maintenance.scheduledDate").isString());
+        mvc.perform(post("/api/commands/execute").with(authentication(owner)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(command))
+                .andExpect(status().isConflict());
+        mvc.perform(post("/api/commands/execute").with(authentication(other)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(command))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/maintenances").with(authentication(other)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+        mvc.perform(get("/api/maintenances").with(authentication(owner)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1));
+
+        String maintenanceId = jdbcTemplate.queryForObject(
+                "SELECT id FROM maintenance_recommendations WHERE transformer_id = ?", String.class, asset);
+        mvc.perform(post("/api/maintenances/{id}/complete", maintenanceId).with(authentication(other)).with(csrf()))
+                .andExpect(status().isBadRequest());
+        mvc.perform(post("/api/commands/undo").with(authentication(owner)).with(csrf()))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/maintenances").with(authentication(owner)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+    }
+
+    @Test
+    void scenarioExposesReferenceInputsAndRejectsOtherWorkspaces() throws Exception {
+        var owner = operator("scenario-owner@example.test");
+        var other = operator("scenario-other@example.test");
+        String asset = addAsset(owner, "Escenario privado", "TEST", "[\"TEMPERATURE\",\"VOLTAGE\"]");
+        String request = """
+                {"transformerId":"%s","variableModified":"TEMPERATURE","targetValue":100}
+                """.formatted(asset);
+        mvc.perform(post("/api/simulations").with(authentication(other)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(request))
+                .andExpect(status().isBadRequest());
+        mvc.perform(post("/api/simulations").with(authentication(owner)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(request))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.criticalAlertThreshold").value(88))
+                .andExpect(jsonPath("$.warningAlertThreshold").value(76))
+                .andExpect(jsonPath("$.referenceInputs[0]").value("VOLTAGE"));
+    }
 
     private UsernamePasswordAuthenticationToken operator(String email) {
         var account = new UserAccountEntity();
