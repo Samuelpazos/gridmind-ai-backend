@@ -31,5 +31,8 @@ public class SimulationResultDto {
     private GridStatus simulatedState;
     private GridStatus substationSimulatedState;
     private String recommendation;
+    private java.util.List<String> referenceInputs;
+    private Double warningAlertThreshold;
+    private Double criticalAlertThreshold;
     private ZonedDateTime executedAt;
 }

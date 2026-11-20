@@ -66,11 +66,13 @@ public class SimulationService {
 
         List<SensorEntity> sensors = sensorRepository.findByTransformerId(transformer.getId());
         Map<String, Double> sensorValues = new HashMap<>();
+        var referenceInputs = new java.util.ArrayList<String>();
         Double originalValue = null;
         for (SensorEntity sensor : sensors) {
             SensorReadingEntity reading = readingRepository.findLatestBySensorId(sensor.getId()).orElse(null);
             double value = reading != null ? reading.getValue() : sensor.getType().getDefaultThreshold() * 0.6;
             sensorValues.put(sensor.getType().name(), value);
+            if (reading == null) referenceInputs.add(sensor.getType().name());
             if (sensor.getType() == type) {
                 originalValue = reading != null ? reading.getValue() : null;
             }
@@ -82,6 +84,11 @@ public class SimulationService {
         double minimum = type == SensorType.TEMPERATURE ? -273.15 : 0.0;
         if (!Double.isFinite(simulatedVal) || (targetValue != null && simulatedVal < minimum)) {
             throw new IllegalArgumentException("El valor simulado está fuera del rango válido.");
+        }
+        if (targetValue != null) {
+            referenceInputs.remove(var);
+        } else if (!sensorValues.containsKey(var)) {
+            referenceInputs.add(var);
         }
         sensorValues.put(var, simulatedVal);
 
@@ -129,6 +136,16 @@ public class SimulationService {
 
         simEntity = simulationRepository.save(simEntity);
         SimulationResultDto dto = mapper.toDto(simEntity);
+        var evaluatedSignals = switch (simResult.getStrategyName() == null ? "" : simResult.getStrategyName()) {
+            case "WEIGHTED_AGE_STRATEGY" -> java.util.EnumSet.of(SensorType.TEMPERATURE, SensorType.VIBRATION);
+            case "THRESHOLD_STRATEGY" -> java.util.EnumSet.of(SensorType.TEMPERATURE, SensorType.CURRENT, SensorType.VIBRATION);
+            default -> java.util.EnumSet.allOf(SensorType.class);
+        };
+        dto.setReferenceInputs(evaluatedSignals.stream().map(SensorType::name)
+                .filter(signalName -> referenceInputs.contains(signalName) || !sensorValues.containsKey(signalName))
+                .toList());
+        dto.setWarningAlertThreshold(type.getWarningAlertThreshold());
+        dto.setCriticalAlertThreshold(type.getCriticalAlertThreshold());
         dto.setSubstationSimulatedState(GridStatus.worstOf(transformer.getSubstation().getStatus(), simulatedState));
         return dto;
     }
