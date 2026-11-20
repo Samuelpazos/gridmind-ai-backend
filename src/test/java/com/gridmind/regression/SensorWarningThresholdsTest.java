@@ -11,7 +11,8 @@ class SensorWarningThresholdsTest {
     @ParameterizedTest
     @CsvSource({
         "TEMPERATURE,76",
-        "VOLTAGE,"
+        "VOLTAGE,",
+        "CURRENT,480"
     })
     void verifiesContract(SensorType type, Double expected) {
         assertEquals(expected, type.getWarningAlertThreshold());
