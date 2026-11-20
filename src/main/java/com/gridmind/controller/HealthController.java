@@ -48,8 +48,9 @@ public class HealthController {
                 "timestamp", ZonedDateTime.now(),
                 "degradedMode", aiConfigService.isForceDegradedMode(),
                 "activeStrategy", aiConfigService.getActiveStrategyName(),
+                "configuredStrategy", aiConfigService.getConfiguredStrategyName(),
                 "database", "PostgreSQL Connected",
-                "websocket", "ACTIVE"
+                "websocket", "INACTIVE"
         ));
     }
 

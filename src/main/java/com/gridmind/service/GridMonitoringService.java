@@ -109,7 +109,9 @@ public class GridMonitoringService {
             }
         }
 
-        EvaluationStrategy strategy = aiConfigService.getActiveStrategy();
+        String owner = transformer.getSubstation() == null ? null : transformer.getSubstation().getOwnerAccountId();
+        EvaluationStrategy strategy = owner == null ? aiConfigService.getActiveStrategy()
+                : aiConfigService.strategyFor(owner);
         EvaluationResult result = strategy.evaluate(transformer, sensorValues);
         if (result.getAnomalyScore() != null
                 && result.getAnomalyScore() >= anomalyScoreThreshold) {
