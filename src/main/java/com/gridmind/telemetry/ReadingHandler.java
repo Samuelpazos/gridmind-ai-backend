@@ -53,6 +53,7 @@ public class ReadingHandler {
         var transformer = sensor.getTransformer();
         return SensorEvent.builder()
                 .readingId(reading.getId())
+                .readingSource(reading.getSource())
                 .sensorId(sensor.getId())
                 .sensorCode(sensor.getCode())
                 .sensorType(sensor.getType())

@@ -14,6 +14,7 @@ import java.time.ZonedDateTime;
 @Builder
 public class SensorEvent {
     private String readingId;
+    private String readingSource;
     private String sensorId;
     private String sensorCode;
     private SensorType sensorType;
