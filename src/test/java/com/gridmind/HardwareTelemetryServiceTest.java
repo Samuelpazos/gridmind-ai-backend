@@ -131,6 +131,13 @@ class HardwareTelemetryServiceTest {
     }
 
     @Test
+    void rejectsAnAbsentDeviceToken() {
+        var error = assertThrows(ResponseStatusException.class, () -> service.authenticateDevice(null));
+
+        assertEquals(HttpStatus.UNAUTHORIZED, error.getStatusCode());
+    }
+
+    @Test
     void storesDemonstrationChannelsWithoutPublishingOperationalEvents() {
         configureOwner();
         when(sensorRepository.findByCodeAndTransformerArchivedAtIsNull(sensor.getCode()))
