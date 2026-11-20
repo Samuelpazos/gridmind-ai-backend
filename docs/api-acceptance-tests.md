@@ -13,3 +13,7 @@ Send a payload for a hardware sensor owned by another account. Expect HTTP 404 a
 ## BE-07 · Archived transformer
 
 Archive a disposable real transformer and send a temperature reading for its former sensor. Expect HTTP 404.
+
+## BE-08 · Oversized batch
+
+Send an array of 33 structurally valid items. Expect HTTP 400 and no change to the reading count.
