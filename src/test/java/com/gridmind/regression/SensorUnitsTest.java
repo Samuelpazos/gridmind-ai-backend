@@ -11,7 +11,8 @@ class SensorUnitsTest {
     @ParameterizedTest
     @CsvSource({
         "TEMPERATURE,°C",
-        "VOLTAGE,kV"
+        "VOLTAGE,kV",
+        "CURRENT,A"
     })
     void verifiesContract(SensorType type, String expected) {
         assertEquals(expected, type.getDefaultUnit());
