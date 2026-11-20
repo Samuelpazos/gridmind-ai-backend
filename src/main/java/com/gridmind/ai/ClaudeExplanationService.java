@@ -53,7 +53,27 @@ public class ClaudeExplanationService {
         return requestBudget.getRemainingRequests();
     }
 
+    public String answerAlert(AlertDto alert, String evidence, String question) {
+        return requestAlertAnswer(buildAlertPrompt(alert) + """
+
+                Responde la pregunta sobre esta alerta en español, en un máximo de cuatro frases.
+                Usa la fecha de registro como fecha de la alerta, no como inicio confirmado del problema.
+                Las lecturas cercanas son contexto, no evidencia de cuál activó la alerta.
+                Indica si es una prueba simulada. Si falta información o la pregunta sale del contexto, dilo.
+                Sugiere solo revisiones de datos en GridMind, nunca maniobras físicas.
+
+                Tipo de activo: %s
+                Fecha de registro: %s
+                Lecturas de los 5 minutos previos: %s
+                Pregunta del operador: %s
+                """.formatted(alert.getAssetType(), alert.getCreatedAt(), evidence, question));
+    }
+
     public String explain(AlertDto alert) {
+        return requestAlertAnswer(buildAlertPrompt(alert));
+    }
+
+    private String requestAlertAnswer(String prompt) {
         requireApiKey();
 
         Map<String, Object> request = Map.of(
@@ -62,7 +82,7 @@ public class ClaudeExplanationService {
                 "temperature", 0.2,
                 "messages", List.of(Map.of(
                         "role", "user",
-                        "content", buildAlertPrompt(alert)
+                        "content", prompt
                 ))
         );
 

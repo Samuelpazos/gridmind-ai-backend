@@ -23,6 +23,14 @@ public interface SensorReadingRepository extends JpaRepository<SensorReadingEnti
 
     Optional<SensorReadingEntity> findFirstBySourceOrderByTimestampDesc(String source);
 
+    @Query("""
+            SELECT r FROM SensorReadingEntity r JOIN FETCH r.sensor s
+            WHERE s.transformer.id = :transformerId AND r.timestamp BETWEEN :since AND :until
+            ORDER BY r.timestamp DESC
+            """)
+    List<SensorReadingEntity> findAroundAlert(String transformerId, ZonedDateTime since, ZonedDateTime until,
+                                             Pageable pageable);
+
     @Query("SELECT r FROM SensorReadingEntity r WHERE r.sensor.id = :sensorId ORDER BY r.timestamp DESC")
     List<SensorReadingEntity> findLatestBySensorId(String sensorId, Pageable pageable);
 

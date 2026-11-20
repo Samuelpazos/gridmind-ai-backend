@@ -8,6 +8,12 @@ import com.gridmind.dto.AiStatusDto;
 import com.gridmind.dto.AlertDto;
 import com.gridmind.dto.AlertExplanationDto;
 import com.gridmind.service.AlertService;
+import com.gridmind.service.AlertAssistantContext;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Size;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.util.Map;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
@@ -25,8 +31,11 @@ public class AlertController {
 
     private final AlertService alertService;
     private final ClaudeExplanationService claudeExplanationService;
+    private final AlertAssistantContext assistantContext;
 
-    public AlertController(AlertService alertService, ClaudeExplanationService claudeExplanationService) {
+    public AlertController(AlertService alertService, ClaudeExplanationService claudeExplanationService,
+                           AlertAssistantContext assistantContext) {
+        this.assistantContext = assistantContext;
         this.alertService = alertService;
         this.claudeExplanationService = claudeExplanationService;
     }
@@ -54,6 +63,49 @@ public class AlertController {
                 remainingRequests
         ));
     }
+
+    @PostMapping("/{id}/assistant")
+    public Map<String, Object> askAssistant(@PathVariable String id, @Valid @RequestBody AssistantQuestion request) {
+        AlertAssistantContext.Context context;
+        try {
+            context = assistantContext.load(id);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No se encontró la alerta solicitada.");
+        }
+        AlertDto alert = context.alert();
+        boolean simulated = alert.getAssetType() == com.gridmind.domain.TransformerAssetType.TEST;
+        String origin = simulated ? " Es una prueba con un transformador simulado." : "";
+        String provider = "Datos de GridMind";
+        String answer;
+        switch (request.topic() == null ? "" : request.topic()) {
+            case "event" -> answer = alert.getMessage() + origin;
+            case "time" -> answer = "La fecha que ves en la ficha corresponde al registro de la alerta. "
+                    + "Con estos datos no se puede determinar cuándo comenzó la condición." + origin;
+            case "next" -> answer = context.readings().isEmpty()
+                    ? "Revisa el mensaje de la alerta y si el sensor tiene lecturas recientes en Activos." + origin
+                    : "Compara las lecturas cercanas de la ficha con el historial del sensor en Activos. "
+                    + "Verifica si el cambio se repite o fue una lectura aislada." + origin;
+            default -> {
+                if (request.question() == null || request.question().isBlank()) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Escribe una pregunta.");
+                }
+                try {
+                    answer = claudeExplanationService.answerAlert(alert, context.readings().toString(),
+                            request.question().trim());
+                    provider = "Anthropic Claude";
+                } catch (ClaudeNotConfiguredException | ClaudeQuotaExceededException exception) {
+                    throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                            "Las preguntas libres necesitan Claude disponible. Puedes usar las preguntas rápidas.");
+                } catch (ClaudeServiceException exception) {
+                    throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                            "Claude no respondió. Puedes usar las preguntas rápidas.");
+                }
+            }
+        }
+        return Map.of("answer", answer, "provider", provider, "readings", context.readings());
+    }
+
+    public record AssistantQuestion(@Size(max = 20) String topic, @Size(max = 500) String question) {}
 
     @PostMapping("/{id}/explanation")
     @Operation(summary = "Generar una explicación de una alerta con Claude")
