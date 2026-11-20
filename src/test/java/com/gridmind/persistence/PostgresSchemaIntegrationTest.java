@@ -1,6 +1,26 @@
 package com.gridmind.persistence;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.gridmind.domain.UserRole;
+import com.gridmind.entity.UserAccountEntity;
+import com.gridmind.repository.UserAccountRepository;
+import com.gridmind.security.GridMindPrincipal;
+import com.gridmind.simulation.SensorSimulator;
 import org.flywaydb.core.Flyway;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.test.web.servlet.MockMvc;
+
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -18,6 +38,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+@AutoConfigureMockMvc
 @Testcontainers(disabledWithoutDocker = true)
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK, properties = {
         "gridmind.simulator.enabled=false",
@@ -31,6 +52,14 @@ class PostgresSchemaIntegrationTest {
 
     @Autowired
     private Flyway flyway;
+    @Autowired
+    private MockMvc mvc;
+    @Autowired
+    private SensorSimulator sensorSimulator;
+    @Autowired
+    private UserAccountRepository accounts;
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -75,6 +104,202 @@ class PostgresSchemaIntegrationTest {
         assertEquals(0, jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('roles', 'permissions', 'role_permissions', 'user_roles', 'auth_bootstrap', 'alert_notifications', 'maintenance_plans', 'maintenance_tasks', 'work_orders')",
                 Integer.class));
+    }
+
+    @Test
+    void operatorsOnlySeeAndChangeRecordsInTheirOwnWorkspace() throws Exception {
+        var first = operator("scope-a@example.test");
+        var second = operator("scope-b@example.test");
+
+        mvc.perform(get("/api/grid").with(authentication(first)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+        mvc.perform(get("/api/grid").with(authentication(second)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+
+        String firstAsset = addTestAsset(first, "Equipo de Paula");
+        String secondAsset = addTestAsset(second, "Equipo de Julián");
+
+        mvc.perform(get("/api/grid").with(authentication(first))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].transformers[0].id").value(firstAsset));
+        mvc.perform(get("/api/grid").with(authentication(second))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].transformers[0].id").value(secondAsset));
+        mvc.perform(delete("/api/grid/transformers/{id}", firstAsset).with(authentication(second)).with(csrf()))
+                .andExpect(status().isNotFound());
+
+        String ownerSensorCode = jdbcTemplate.queryForObject(
+                "SELECT code FROM sensors WHERE transformer_id = ?", String.class, firstAsset);
+        String secondReal = addAsset(second, "Equipo real privado", "HARDWARE", "[]");
+        mvc.perform(patch("/api/grid/transformers/{id}/temperature-sensor", secondReal)
+                        .with(authentication(second)).with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.Map.of("sensorCode", ownerSensorCode))))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("Este código de sensor ya está en uso. Usa un código distinto para otra placa."));
+
+        String sensorId = jdbcTemplate.queryForObject(
+                "SELECT id FROM sensors WHERE transformer_id = ?", String.class, firstAsset);
+        jdbcTemplate.update("""
+                INSERT INTO sensor_readings (id, sensor_id, value, unit, timestamp, source)
+                VALUES ('workspace-reading', ?, 32.5, '°C', CURRENT_TIMESTAMP, 'SIMULATION')
+                """, sensorId);
+        jdbcTemplate.update("""
+                INSERT INTO alerts (id, transformer_id, severity, message)
+                VALUES ('workspace-alert', ?, 'WARNING', 'Alerta privada')
+                """, firstAsset);
+        mvc.perform(get("/api/components/{id}/readings", sensorId).with(authentication(first)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].value").value(32.5));
+        mvc.perform(get("/api/components/{id}/readings", sensorId).with(authentication(second)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+        mvc.perform(get("/api/alerts").with(authentication(first)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].message").value("Alerta privada"));
+        mvc.perform(get("/api/alerts").with(authentication(second)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+
+        mvc.perform(post("/api/simulations").with(authentication(first)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"transformerId":"%s","variableModified":"TEMPERATURE","targetValue":96}
+                                """.formatted(firstAsset)))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/simulations").with(authentication(first)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].transformerId").value(firstAsset));
+        mvc.perform(get("/api/simulations").with(authentication(second)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+
+        mvc.perform(put("/api/config/strategy").with(authentication(first)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"strategyName":"THRESHOLD_STRATEGY"}
+                                """))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.strategyName").value("THRESHOLD_STRATEGY"));
+        mvc.perform(get("/health").with(authentication(second)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.activeStrategy").value("SUPERVISED_MODEL_STRATEGY"));
+
+        mvc.perform(delete("/api/grid/transformers/{id}", firstAsset).with(authentication(first)).with(csrf()))
+                .andExpect(status().isNoContent());
+        mvc.perform(get("/api/grid/transformers/archived").with(authentication(first)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].id").value(firstAsset));
+        mvc.perform(get("/api/grid/transformers/archived").with(authentication(second)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+    }
+
+    @Test
+    void manualTelemetryCreatesRealAlertsOnlyForTheSelectedSimulatedAsset() throws Exception {
+        var operator = operator("manual-scenario@example.test");
+        var other = operator("manual-other@example.test");
+        String selected = addTestAsset(operator, "Equipo seleccionado");
+        String untouched = addTestAsset(operator, "Equipo sin escenario");
+        String physical = addAsset(operator, "Equipo físico", "HARDWARE", "[]");
+        String request = """
+                {"transformerId":"%s","values":{"TEMPERATURE":100}}
+                """;
+        mvc.perform(put("/api/config/simulator/manual").with(authentication(other)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(request.formatted(selected)))
+                .andExpect(status().isNotFound());
+        mvc.perform(put("/api/config/simulator/manual").with(authentication(operator)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(request.formatted(physical)))
+                .andExpect(status().isNotFound());
+        mvc.perform(put("/api/config/simulator/manual").with(authentication(operator)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {"transformerId":"%s","values":{"CURRENT":500}}
+                                """.formatted(selected)))
+                .andExpect(status().isBadRequest());
+        mvc.perform(put("/api/config/simulator/manual").with(authentication(operator)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(request.formatted(selected)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.values.TEMPERATURE").value(100));
+
+        try {
+            sensorSimulator.generateSensorTelemetryTick();
+            assertEquals(1, jdbcTemplate.queryForObject("""
+                    SELECT count(*) FROM alerts
+                    WHERE transformer_id = ? AND severity = 'CRITICAL' AND source = 'SENSOR_OBSERVER'
+                    """, Integer.class, selected));
+            String alertId = jdbcTemplate.queryForObject("""
+                    SELECT id FROM alerts WHERE transformer_id = ? AND source = 'SENSOR_OBSERVER'
+                    """, String.class, selected);
+            mvc.perform(post("/api/alerts/{id}/assistant", alertId).with(authentication(operator)).with(csrf())
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"topic\":\"event\"}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.provider").value("Datos de GridMind"))
+                    .andExpect(jsonPath("$.readings[0].value").value(100));
+            mvc.perform(post("/api/alerts/{id}/assistant", alertId).with(authentication(other)).with(csrf())
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"topic\":\"event\"}"))
+                    .andExpect(status().isNotFound());
+            assertEquals(0, jdbcTemplate.queryForObject("""
+                    SELECT count(*) FROM sensor_readings r JOIN sensors s ON r.sensor_id = s.id
+                    WHERE s.transformer_id = ?
+                    """, Integer.class, untouched));
+            mvc.perform(get("/api/alerts").with(authentication(other)))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+        } finally {
+            mvc.perform(delete("/api/config/simulator/manual").with(authentication(operator)).with(csrf()))
+                    .andExpect(status().isNoContent());
+        }
+        mvc.perform(get("/api/config/simulator").with(authentication(operator)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.active").value(false))
+                .andExpect(jsonPath("$.manualScenario").doesNotExist());
+    }
+
+    @Test
+    void failureCommandCreatesOnePrivateCriticalAlertAndRejectsPhysicalAssets() throws Exception {
+        var operator = operator("failure-command@example.test");
+        var other = operator("failure-command-other@example.test");
+        String simulated = addTestAsset(operator, "Falla de prueba");
+        String physical = addAsset(operator, "Equipo real", "HARDWARE", "[]");
+        String command = """
+                {"commandName":"SIMULATE_FAILURE","targetId":"%s"}
+                """;
+
+        mvc.perform(post("/api/commands/execute").with(authentication(operator)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content(command.formatted(physical)))
+                .andExpect(status().isBadRequest());
+        for (int attempt = 0; attempt < 2; attempt++) {
+            mvc.perform(post("/api/commands/execute").with(authentication(operator)).with(csrf())
+                            .contentType(MediaType.APPLICATION_JSON).content(command.formatted(simulated)))
+                    .andExpect(status().isOk());
+        }
+        mvc.perform(get("/api/alerts").with(authentication(operator)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].severity").value("CRITICAL"))
+                .andExpect(jsonPath("$[0].assetType").value("TEST"))
+                .andExpect(jsonPath("$[0].source").value("MANUAL_FAILURE_SIMULATION"));
+        mvc.perform(get("/api/alerts").with(authentication(other)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+    }
+
+
+    private UsernamePasswordAuthenticationToken operator(String email) {
+        var account = new UserAccountEntity();
+        account.setEmail(email);
+        account.setDisplayName("Operador");
+        account.setPasswordHash("unused-in-this-test");
+        account.setRole(UserRole.OPERATOR);
+        var principal = GridMindPrincipal.from(accounts.saveAndFlush(account));
+        return UsernamePasswordAuthenticationToken.authenticated(principal, null, principal.getAuthorities());
+    }
+
+    private String addTestAsset(UsernamePasswordAuthenticationToken auth, String name) throws Exception {
+        return addAsset(auth, name, "TEST", "[\"TEMPERATURE\"]");
+    }
+
+    private String addAsset(UsernamePasswordAuthenticationToken auth, String name, String type, String sensors)
+            throws Exception {
+        String response = mvc.perform(post("/api/grid/transformers").with(authentication(auth)).with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON).content("""
+                                {
+                                  "substationType":"URBAN",
+                                  "substationName":"Subestación privada",
+                                  "substationLocation":"Laboratorio",
+                                  "transformerName":"%s",
+                                  "assetType":"%s",
+                                  "ratingKva":750,
+                                  "ageYears":4,
+                                  "sensorTypes":%s
+                                }
+                                """.formatted(name, type, sensors)))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        return objectMapper.readTree(response).get("id").asText();
     }
 
     @Test
