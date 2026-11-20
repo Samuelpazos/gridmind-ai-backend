@@ -29,3 +29,7 @@ Send a value with absolute magnitude greater than 1,000,000. Expect HTTP 400.
 ## BE-11 · Timestamp ahead of server time
 
 Send a reading dated two minutes after the API server clock. Expect HTTP 400.
+
+## BE-12 · Atomic rejection of a mixed batch
+
+Send a valid temperature item and a voltage demonstration item with the wrong unit. Expect HTTP 422 and verify that neither item was persisted.
