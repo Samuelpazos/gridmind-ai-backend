@@ -32,3 +32,4 @@ Use HTTPS and set `SPRING_PROFILES_ACTIVE=production`. A separately hosted front
 - [Access and permissions](docs/permisos.md)
 - [Hardware telemetry contract](docs/telemetria.md)
 - [Backend verification](docs/verificacion.md)
+- [Release verification checklist](docs/release-checklist.md)
