@@ -10,7 +10,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class GridStatusAggregationTest {
     @ParameterizedTest
     @CsvSource({
-        "NORMAL,NORMAL,NORMAL"
+        "NORMAL,NORMAL,NORMAL",
+        "NORMAL,WARNING,WARNING"
     })
     void verifiesContract(GridStatus left, GridStatus right, GridStatus expected) {
         assertEquals(expected, GridStatus.worstOf(left, right));
