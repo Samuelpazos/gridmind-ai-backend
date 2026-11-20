@@ -12,7 +12,8 @@ class SensorWarningThresholdsTest {
     @CsvSource({
         "TEMPERATURE,76",
         "VOLTAGE,",
-        "CURRENT,480"
+        "CURRENT,480",
+        "VIBRATION,"
     })
     void verifiesContract(SensorType type, Double expected) {
         assertEquals(expected, type.getWarningAlertThreshold());
