@@ -65,3 +65,7 @@ Activate the simulator for the telemetry owner, then try a valid hardware item. 
 ## BE-20 · Independent simulator workspace
 
 Keep the telemetry owner's simulator paused and start simulation in a second workspace. Send the owner's valid hardware batch and expect HTTP 201.
+
+## BE-21 · Workspace-scoped last hardware reading
+
+In the owner's session, read telemetry status after a known hardware batch. Verify the timestamp and confirm a different account cannot see that reading.
