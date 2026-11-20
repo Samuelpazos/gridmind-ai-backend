@@ -61,3 +61,7 @@ Pause the simulator for the configured telemetry owner and send a valid item. Ex
 ## BE-19 · Active simulator blocks hardware
 
 Activate the simulator for the telemetry owner, then try a valid hardware item. Expect HTTP 409. Restore the original simulator setting.
+
+## BE-20 · Independent simulator workspace
+
+Keep the telemetry owner's simulator paused and start simulation in a second workspace. Send the owner's valid hardware batch and expect HTTP 201.
