@@ -12,7 +12,8 @@ class SensorCriticalThresholdsTest {
     @CsvSource({
         "TEMPERATURE,88",
         "VOLTAGE,",
-        "CURRENT,"
+        "CURRENT,",
+        "VIBRATION,5"
     })
     void verifiesContract(SensorType type, Double expected) {
         assertEquals(expected, type.getCriticalAlertThreshold());
