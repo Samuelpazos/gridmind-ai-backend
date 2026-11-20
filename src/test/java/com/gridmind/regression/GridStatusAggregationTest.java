@@ -30,7 +30,8 @@ class GridStatusAggregationTest {
         "FAILED,CRITICAL,FAILED",
         "FAILED,FAILED,FAILED",
         "FAILED,,FAILED",
-        ",NORMAL,NORMAL"
+        ",NORMAL,NORMAL",
+        ",WARNING,WARNING"
     })
     void verifiesContract(GridStatus left, GridStatus right, GridStatus expected) {
         assertEquals(expected, GridStatus.worstOf(left, right));
