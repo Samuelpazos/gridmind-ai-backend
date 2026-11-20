@@ -24,7 +24,8 @@ class TelemetryClockBoundaryTest {
         "60000,200",
         "60001,400",
         "61000,400",
-        "3600000,400"
+        "3600000,400",
+        "86400000,400"
     })
     void verifiesContract(long offsetMillis, int expectedStatus) {
         var now = ZonedDateTime.parse("2026-01-01T00:00:00Z");
