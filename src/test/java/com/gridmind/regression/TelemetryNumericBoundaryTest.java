@@ -16,7 +16,8 @@ class TelemetryNumericBoundaryTest {
     @CsvSource({
         "0,200",
         "-0.0,200",
-        "1000000,200"
+        "1000000,200",
+        "-1000000,200"
     })
     void verifiesContract(double value, int expectedStatus) {
         var now = ZonedDateTime.parse("2026-01-01T00:00:00Z");
