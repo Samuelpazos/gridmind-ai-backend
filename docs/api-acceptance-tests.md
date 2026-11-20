@@ -5,3 +5,7 @@ Use a disposable application and PostgreSQL database. Configure a test telemetry
 ## BE-05 · Invalid token at the HTTP boundary
 
 Send a valid temperature payload with an incorrect device token. Expect HTTP 401 and no new row for the sensor.
+
+## BE-06 · Foreign workspace sensor
+
+Send a payload for a hardware sensor owned by another account. Expect HTTP 404 and no reading in either workspace.
