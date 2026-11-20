@@ -33,3 +33,7 @@ Send a reading dated two minutes after the API server clock. Expect HTTP 400.
 ## BE-12 · Atomic rejection of a mixed batch
 
 Send a valid temperature item and a voltage demonstration item with the wrong unit. Expect HTTP 422 and verify that neither item was persisted.
+
+## BE-13 · Temperature-only firmware
+
+Send a single normal DS18B20 item without `demonstrationChannel`. Expect HTTP 201 and `source=HARDWARE`.
