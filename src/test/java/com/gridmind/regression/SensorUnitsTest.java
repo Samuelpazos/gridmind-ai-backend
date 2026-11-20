@@ -12,7 +12,8 @@ class SensorUnitsTest {
     @CsvSource({
         "TEMPERATURE,°C",
         "VOLTAGE,kV",
-        "CURRENT,A"
+        "CURRENT,A",
+        "VIBRATION,mm/s"
     })
     void verifiesContract(SensorType type, String expected) {
         assertEquals(expected, type.getDefaultUnit());
