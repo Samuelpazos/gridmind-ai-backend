@@ -11,7 +11,8 @@ class GridStatusAggregationTest {
     @ParameterizedTest
     @CsvSource({
         "NORMAL,NORMAL,NORMAL",
-        "NORMAL,WARNING,WARNING"
+        "NORMAL,WARNING,WARNING",
+        "NORMAL,CRITICAL,CRITICAL"
     })
     void verifiesContract(GridStatus left, GridStatus right, GridStatus expected) {
         assertEquals(expected, GridStatus.worstOf(left, right));
