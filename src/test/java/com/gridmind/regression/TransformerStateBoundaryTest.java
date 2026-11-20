@@ -19,7 +19,8 @@ class TransformerStateBoundaryTest {
         "WARNING,0.30,false,WARNING",
         "WARNING,0.5999,false,WARNING",
         "WARNING,0.60,false,CRITICAL",
-        "CRITICAL,0.2999,false,WARNING"
+        "CRITICAL,0.2999,false,WARNING",
+        "CRITICAL,0.2999,true,NORMAL"
     })
     void verifiesContract(GridStatus initial, double probability, boolean maintained, GridStatus expected) {
         assertEquals(expected, new StateContext(initial).evaluate(probability, maintained));
