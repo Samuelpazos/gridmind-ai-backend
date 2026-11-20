@@ -77,3 +77,7 @@ Configure a test double for Claude, request a prediction for a four-channel prot
 ## BE-23 · Prefer physical input for prediction
 
 Provide both measured and demonstration readings for one channel in a disposable fixture. Verify that the provider request uses the measured value for that channel.
+
+## BE-24 · PostgreSQL migration compatibility
+
+Apply Flyway through V17 in a disposable database containing hardware and simulated readings. Apply V18, verify that existing rows retain their sources, and insert a valid demonstration reading.
