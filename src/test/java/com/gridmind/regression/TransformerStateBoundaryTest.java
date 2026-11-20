@@ -12,7 +12,8 @@ class TransformerStateBoundaryTest {
     @ParameterizedTest
     @CsvSource({
         "NORMAL,0.2999,false,NORMAL",
-        "NORMAL,0.30,false,WARNING"
+        "NORMAL,0.30,false,WARNING",
+        "NORMAL,0.5999,false,WARNING"
     })
     void verifiesContract(GridStatus initial, double probability, boolean maintained, GridStatus expected) {
         assertEquals(expected, new StateContext(initial).evaluate(probability, maintained));
