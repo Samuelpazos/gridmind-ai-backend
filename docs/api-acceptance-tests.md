@@ -17,3 +17,7 @@ Archive a disposable real transformer and send a temperature reading for its for
 ## BE-08 · Oversized batch
 
 Send an array of 33 structurally valid items. Expect HTTP 400 and no change to the reading count.
+
+## BE-09 · Incorrect measurement unit
+
+Send a temperature item using `kV`. Expect HTTP 422 and no new reading.
