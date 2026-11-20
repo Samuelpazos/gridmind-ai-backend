@@ -92,7 +92,7 @@ public class AlertController {
                 try {
                     answer = claudeExplanationService.answerAlert(alert,
                             "Lectura detonante: " + context.triggeringReading() + ". Lecturas cercanas: " + context.readings(),
-                            request.question().trim());
+                            context.maintenanceHistory().toString(), request.question().trim());
                     provider = "Anthropic Claude";
                 } catch (ClaudeNotConfiguredException | ClaudeQuotaExceededException exception) {
                     throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,

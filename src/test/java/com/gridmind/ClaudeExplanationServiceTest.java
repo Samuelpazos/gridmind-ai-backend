@@ -50,6 +50,27 @@ class ClaudeExplanationServiceTest {
     }
 
     @Test
+    void answersMaintenanceQuestionUsingTheAssetRecords() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        ClaudeExplanationService service = createService(builder, "test-api-key");
+
+        server.expect(requestTo("https://api.anthropic.com/v1/messages"))
+                .andExpect(jsonPath("$.messages[0].content").value(org.hamcrest.Matchers.allOf(
+                        org.hamcrest.Matchers.containsString("Answer the operator's question directly"),
+                        org.hamcrest.Matchers.containsString("scheduledDate=2026-11-25"),
+                        org.hamcrest.Matchers.containsString("¿Qué pasa si aplazo el mantenimiento?"))))
+                .andRespond(withSuccess("""
+                        {"content":[{"type":"text","text":"Aplazar el mantenimiento podría aumentar el riesgo si persiste la condición anormal."}]}
+                        """, MediaType.APPLICATION_JSON));
+
+        String answer = service.answerAlert(referenceAlert(), "Temperatura simulada de 200 °C",
+                "[Maintenance[status=SCHEDULED, scheduledDate=2026-11-25]]", "¿Qué pasa si aplazo el mantenimiento?");
+        assertEquals("Aplazar el mantenimiento podría aumentar el riesgo si persiste la condición anormal.", answer);
+        server.verify();
+    }
+
+    @Test
     void doesNotCallClaudeWhenApiKeyIsMissing() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
