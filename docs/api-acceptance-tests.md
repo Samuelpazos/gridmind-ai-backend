@@ -21,3 +21,7 @@ Send an array of 33 structurally valid items. Expect HTTP 400 and no change to t
 ## BE-09 · Incorrect measurement unit
 
 Send a temperature item using `kV`. Expect HTTP 422 and no new reading.
+
+## BE-10 · Out-of-range sensor magnitude
+
+Send a value with absolute magnitude greater than 1,000,000. Expect HTTP 400.
