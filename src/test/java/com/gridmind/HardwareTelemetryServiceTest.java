@@ -151,6 +151,16 @@ class HardwareTelemetryServiceTest {
     }
 
     @Test
+    void rejectsAnEmptyBatch() {
+        configureOwner();
+
+        var error = assertThrows(ResponseStatusException.class, () -> service.ingestBatch(List.of()));
+
+        assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
+        verify(readingRepository, never()).saveAllAndFlush(anyList());
+    }
+
+    @Test
     void storesDemonstrationChannelsWithoutPublishingOperationalEvents() {
         configureOwner();
         when(sensorRepository.findByCodeAndTransformerArchivedAtIsNull(sensor.getCode()))
