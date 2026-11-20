@@ -1,7 +1,7 @@
-# Telemetría de hardware
+# Hardware telemetry
 
-El ESP32 envía un arreglo JSON a `POST /api/telemetry/readings`. Cada elemento identifica un sensor registrado por `sensorCode` y contiene un `value` numérico y su `unit`. El dispositivo se autentica mediante el encabezado `X-Device-Token`.
+The ESP32 sends a JSON array to `POST /api/telemetry/readings`. Each item identifies a registered sensor by `sensorCode` and includes a numeric `value` and its `unit`. The device authenticates with the `X-Device-Token` header.
 
-Vincula primero el código exacto del firmware en **Activos**. Pausa el simulador de datos desde **Operaciones → Entrada de telemetría** para recibir datos físicos. La aplicación distingue el origen de las lecturas para poder comprobar la conexión.
+Link the exact firmware sensor code in **Activos**. Pause the data simulator for the device owner under **Operaciones → Entrada de telemetría** before sending hardware readings. The app labels readings by source so you can verify that hardware telemetry is arriving.
 
-Una respuesta exitosa indica que el lote fue procesado. Si no aparecen lecturas, comprueba el código del sensor, la coincidencia del token y el estado del simulador de datos.
+A successful response means the batch was processed. If readings are missing, check the sensor code, device token, simulator status, and backend connectivity.
