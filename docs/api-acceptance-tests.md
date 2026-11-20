@@ -57,3 +57,7 @@ Start with normal temperature, then submit extreme potentiometer values in an ot
 ## BE-18 · Paused simulator permits hardware
 
 Pause the simulator for the configured telemetry owner and send a valid item. Expect HTTP 201.
+
+## BE-19 · Active simulator blocks hardware
+
+Activate the simulator for the telemetry owner, then try a valid hardware item. Expect HTTP 409. Restore the original simulator setting.
