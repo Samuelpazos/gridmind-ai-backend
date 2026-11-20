@@ -161,6 +161,20 @@ class HardwareTelemetryServiceTest {
     }
 
     @Test
+    void rejectsRepeatedReadingsForTheSameSensorInOneBatch() {
+        configureOwner();
+        when(sensorRepository.findByCodeAndTransformerArchivedAtIsNull(sensor.getCode()))
+                .thenReturn(Optional.of(sensor));
+        var reading = new HardwareReadingRequestDto(sensor.getCode(), 22.0, "°C", null);
+
+        var error = assertThrows(ResponseStatusException.class,
+                () -> service.ingestBatch(List.of(reading, reading)));
+
+        assertEquals(HttpStatus.BAD_REQUEST, error.getStatusCode());
+        verify(readingRepository, never()).saveAllAndFlush(anyList());
+    }
+
+    @Test
     void storesDemonstrationChannelsWithoutPublishingOperationalEvents() {
         configureOwner();
         when(sensorRepository.findByCodeAndTransformerArchivedAtIsNull(sensor.getCode()))
