@@ -1,11 +1,15 @@
-# Desplegar la API
+# Deploy the API
 
-- Ejecuta la API Spring Boot con Java 25 y una instancia privada de PostgreSQL.
-- Configura `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME` y `SPRING_DATASOURCE_PASSWORD` en el proveedor.
-- Activa `SPRING_PROFILES_ACTIVE=production`. El proxy público debe terminar TLS y sobrescribir `X-Forwarded-Proto` con el esquema original.
-- Configura `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `DEMO_MODE=false` y `AUTH_REGISTRATION_ENABLED=false` para una instancia de evaluación privada.
-- Mantén `TELEMETRY_DEVICE_TOKEN` y las claves de servicios externos en la configuración secreta del proveedor.
+- Run the Spring Boot API on Java 25 with a private PostgreSQL instance.
+- Set `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD` in the hosting provider.
+- Set `SPRING_PROFILES_ACTIVE=production`. The public proxy must terminate TLS and overwrite `X-Forwarded-Proto` with the original scheme.
+- Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` for the account that keeps the existing inventory and receives ESP32 readings. Keep `DEMO_MODE=false`. Enable `AUTH_REGISTRATION_ENABLED=true` if visitors should be able to register and create their own inventory.
+- Store `TELEMETRY_DEVICE_TOKEN` and external service keys in the provider's secret settings.
 
-Antes de compartir la URL, verifica `GET /health`, inicia sesión como administrador por HTTPS y comprueba los atributos Secure y HttpOnly de la cookie de sesión.
+Before sharing the URL, check `GET /health`, sign in over HTTPS, and verify the session cookie's Secure and HttpOnly attributes. Use two accounts to verify that each can access only its own inventory.
 
-Usa [el ejemplo de variables de producción](../.env.production.example) como referencia y completa los valores privados en el proveedor.
+Flyway uses the PostgreSQL role `gridmind_workspace` to enforce row-level access. If the migration account cannot create roles, ask the database administrator to create it with NOLOGIN, NOINHERIT, NOBYPASSRLS, and no administrative privileges, and grant the Flyway account permission to administer that role. The API's database account needs permission to run `SET ROLE gridmind_workspace`.
+
+At startup, existing unowned substations are assigned to `ADMIN_EMAIL`. Keep that address while using the current ESP32 token.
+
+Use the [production environment example](../.env.production.example) as a template and fill in the private values in the provider.
