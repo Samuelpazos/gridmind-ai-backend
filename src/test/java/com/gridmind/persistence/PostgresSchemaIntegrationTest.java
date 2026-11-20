@@ -223,8 +223,8 @@ class PostgresSchemaIntegrationTest {
                     """, String.class, selected);
             mvc.perform(get("/api/alerts").with(authentication(operator)))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$[0].readingSource").value("SIMULATION"))
-                    .andExpect(jsonPath("$[0].readingTimestamp").isString());
+                    .andExpect(jsonPath("$[?(@.id == '%s')].readingSource".formatted(alertId)).value(org.hamcrest.Matchers.hasItem("SIMULATION")))
+                    .andExpect(jsonPath("$[?(@.id == '%s')].readingTimestamp".formatted(alertId)).isNotEmpty());
             mvc.perform(post("/api/alerts/{id}/assistant", alertId).with(authentication(operator)).with(csrf())
                             .contentType(MediaType.APPLICATION_JSON).content("{\"topic\":\"event\"}"))
                     .andExpect(status().isOk())
