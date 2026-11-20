@@ -36,6 +36,11 @@ public class AlertService {
 
     @Transactional
     public AlertDto createAlertIfNotExists(String transformerId, GridStatus severity, String message, String source) {
+        return createAlertIfNotExists(transformerId, severity, message, source, null);
+    }
+
+    private AlertDto createAlertIfNotExists(String transformerId, GridStatus severity, String message,
+                                            String source, SensorEvent event) {
         // Prevent duplicate unacknowledged alerts for same transformer & severity
         List<AlertEntity> existing = alertRepository.findByTransformerIdAndSeverityAndAcknowledgedFalse(transformerId, severity);
         if (!existing.isEmpty()) {
@@ -51,6 +56,9 @@ public class AlertService {
                 .message(message)
                 .acknowledged(false)
                 .source(source)
+                .readingId(event == null ? null : event.getReadingId())
+                .readingSource(event == null ? null : event.getReadingSource())
+                .readingTimestamp(event == null ? null : event.getTimestamp())
                 .build();
 
         alert = alertRepository.save(alert);
@@ -93,24 +101,24 @@ public class AlertService {
         double val = event.getValue();
         switch (event.getSensorType()) {
             case TEMPERATURE:
-                if (val > 88.0) {
+                if (val > event.getSensorType().getCriticalAlertThreshold()) {
                     createAlertIfNotExists(event.getTransformerId(), GridStatus.CRITICAL,
-                            "Temperatura crítica detectada en " + event.getSensorCode() + ": " + val + " °C", "SENSOR_OBSERVER");
-                } else if (val > 76.0) {
+                            "Temperatura crítica detectada en " + event.getSensorCode() + ": " + val + " °C", "SENSOR_OBSERVER", event);
+                } else if (val > event.getSensorType().getWarningAlertThreshold()) {
                     createAlertIfNotExists(event.getTransformerId(), GridStatus.WARNING,
-                            "Temperatura elevada en " + event.getSensorCode() + ": " + val + " °C", "SENSOR_OBSERVER");
+                            "Temperatura elevada en " + event.getSensorCode() + ": " + val + " °C", "SENSOR_OBSERVER", event);
                 }
                 break;
             case VIBRATION:
-                if (val > 5.0) {
+                if (val > event.getSensorType().getCriticalAlertThreshold()) {
                     createAlertIfNotExists(event.getTransformerId(), GridStatus.CRITICAL,
-                            "Vibración severa en " + event.getSensorCode() + ": " + val + " mm/s", "SENSOR_OBSERVER");
+                            "Vibración severa en " + event.getSensorCode() + ": " + val + " mm/s", "SENSOR_OBSERVER", event);
                 }
                 break;
             case CURRENT:
-                if (val > 480.0) {
+                if (val > event.getSensorType().getWarningAlertThreshold()) {
                     createAlertIfNotExists(event.getTransformerId(), GridStatus.WARNING,
-                            "Sobrecarga de corriente en " + event.getSensorCode() + ": " + val + " A", "SENSOR_OBSERVER");
+                            "Sobrecarga de corriente en " + event.getSensorCode() + ": " + val + " A", "SENSOR_OBSERVER", event);
                 }
                 break;
         }
