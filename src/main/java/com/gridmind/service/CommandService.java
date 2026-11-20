@@ -33,7 +33,7 @@ public class CommandService {
     }
 
     @Transactional
-    public void executeCommand(CommandRequestDto request, String operator) {
+    public ScheduleMaintenanceCommand.Receipt executeCommand(CommandRequestDto request, String operator) {
         GridCommand command = createCommand(request.getCommandName(), request.getTargetId(),
                 request.getParameters(), operator);
         commandInvoker.executeCommand(command, request.getTargetId(),
@@ -42,6 +42,7 @@ public class CommandService {
             alertService.createAlertIfNotExists(request.getTargetId(), GridStatus.CRITICAL,
                     "Falla simulada desde Operaciones.", "MANUAL_FAILURE_SIMULATION");
         }
+        return command instanceof ScheduleMaintenanceCommand maintenance ? maintenance.getReceipt() : null;
     }
 
     @Transactional

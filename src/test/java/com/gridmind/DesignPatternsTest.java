@@ -192,7 +192,7 @@ public class DesignPatternsTest {
     @DisplayName("Memento snapshots are persisted for maintenance commands")
     void persistsAndRestoresScheduledMaintenanceSnapshot() {
         TransformerEntity transformer = TransformerEntity.builder().id("t-456").build();
-        when(transformerRepository.findByIdAndArchivedAtIsNull("t-456"))
+        when(transformerRepository.lockActiveById("t-456"))
                 .thenReturn(Optional.of(transformer));
         when(maintenanceRepository.save(any())).thenAnswer(invocation -> {
             var recommendation = invocation.getArgument(0,

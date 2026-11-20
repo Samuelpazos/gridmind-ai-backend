@@ -11,4 +11,5 @@ public interface MaintenanceRecommendationRepository extends JpaRepository<Maint
     List<MaintenanceRecommendationEntity> findByTransformerIdOrderByCreatedAtDesc(String transformerId);
     List<MaintenanceRecommendationEntity> findByStatusOrderByCreatedAtDesc(String status);
     List<MaintenanceRecommendationEntity> findAllByOrderByCreatedAtDesc();
+    boolean existsByTransformerIdAndStatus(String transformerId, String status);
 }

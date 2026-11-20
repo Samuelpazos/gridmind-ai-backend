@@ -15,6 +15,13 @@ public class ScheduleMaintenanceCommand implements GridCommand {
     private final String transformerId;
     private final String recommendationText;
     private String createdMaintenanceId;
+    private Receipt receipt;
+
+    public record Receipt(String transformerCode, ZonedDateTime scheduledDate) {}
+
+    public Receipt getReceipt() {
+        return receipt;
+    }
 
     public ScheduleMaintenanceCommand(TransformerRepository transformerRepository,
                                        MaintenanceRecommendationRepository maintenanceRepository,
@@ -33,8 +40,14 @@ public class ScheduleMaintenanceCommand implements GridCommand {
 
     @Override
     public void execute() {
-        TransformerEntity transformer = transformerRepository.findByIdAndArchivedAtIsNull(transformerId)
+        TransformerEntity transformer = transformerRepository.lockActiveById(transformerId)
                 .orElseThrow(() -> new IllegalArgumentException("Transformer not found: " + transformerId));
+
+        if (maintenanceRepository.existsByTransformerIdAndStatus(transformerId, "SCHEDULED")) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.CONFLICT,
+                    "Este transformador ya tiene un mantenimiento programado.");
+        }
 
         MaintenanceRecommendationEntity rec = MaintenanceRecommendationEntity.builder()
                 .transformer(transformer)
@@ -45,6 +58,7 @@ public class ScheduleMaintenanceCommand implements GridCommand {
 
         rec = maintenanceRepository.save(rec);
         this.createdMaintenanceId = rec.getId();
+        this.receipt = new Receipt(transformer.getCode(), rec.getScheduledDate());
     }
 
     @Override

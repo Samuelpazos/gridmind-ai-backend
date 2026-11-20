@@ -24,10 +24,14 @@ public class CommandController {
 
     @PostMapping("/execute")
     @Operation(summary = "Ejecutar un comando (SIMULATE_FAILURE, SCHEDULE_MAINTENANCE, ACKNOWLEDGE_ALERT)")
-    public ResponseEntity<Map<String, String>> executeCommand(
+    public ResponseEntity<Map<String, Object>> executeCommand(
             @Valid @RequestBody CommandRequestDto request, Authentication authentication) {
-        commandService.executeCommand(request, authentication.getName());
-        return ResponseEntity.ok(Map.of("status", "SUCCESS", "message", "Comando ejecutado: " + request.getCommandName()));
+        var receipt = commandService.executeCommand(request, authentication.getName());
+        Map<String, Object> response = new java.util.LinkedHashMap<>();
+        response.put("status", "SUCCESS");
+        response.put("message", "Operación completada.");
+        if (receipt != null) response.put("maintenance", receipt);
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/undo")
