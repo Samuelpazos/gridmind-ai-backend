@@ -101,9 +101,15 @@ public class SimulationService {
             simulatedState = GridStatus.NORMAL;
         }
 
+        String signal = switch (type) {
+            case TEMPERATURE -> "la temperatura";
+            case VOLTAGE -> "el voltaje";
+            case CURRENT -> "la corriente";
+            case VIBRATION -> "la vibración";
+        };
         String recommendation = simResult.getRiskLevel() == RiskLevel.HIGH || simResult.getRiskLevel() == RiskLevel.CRITICAL
                 ? "Inspeccionar el sistema de refrigeración y aislamiento del transformador inmediatamente."
-                : "Monitorear evolución de " + var + " en los próximos ciclos.";
+                : "Monitorear la evolución de " + signal + " en los próximos ciclos.";
 
         SimulationEntity simEntity = SimulationEntity.builder()
                 .transformer(transformer)
