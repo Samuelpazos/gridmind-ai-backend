@@ -53,3 +53,7 @@ After a valid mixed-origin batch, query its sensor readings by timestamp in the 
 ## BE-17 · Demonstration values outside operational alerts
 
 Start with normal temperature, then submit extreme potentiometer values in an otherwise valid batch. Check that the demonstration channels do not generate operational alerts.
+
+## BE-18 · Paused simulator permits hardware
+
+Pause the simulator for the configured telemetry owner and send a valid item. Expect HTTP 201.
