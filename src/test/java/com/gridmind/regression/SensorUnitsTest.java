@@ -10,7 +10,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class SensorUnitsTest {
     @ParameterizedTest
     @CsvSource({
-        "TEMPERATURE,°C"
+        "TEMPERATURE,°C",
+        "VOLTAGE,kV"
     })
     void verifiesContract(SensorType type, String expected) {
         assertEquals(expected, type.getDefaultUnit());
