@@ -41,3 +41,7 @@ Send a single normal DS18B20 item without `demonstrationChannel`. Expect HTTP 20
 ## BE-14 · Four-channel firmware
 
 Send a temperature item and demonstration items for voltage, current and vibration using its linked temperature code. Expect HTTP 201 and four readings with the configured units.
+
+## BE-15 · Reused demonstration sensor IDs
+
+Submit two valid temperature-and-voltage batches for the same anchor at different times. Compare the returned voltage sensor IDs and confirm they match.
