@@ -11,7 +11,8 @@ class SensorReferenceThresholdsTest {
     @ParameterizedTest
     @CsvSource({
         "TEMPERATURE,90",
-        "VOLTAGE,15"
+        "VOLTAGE,15",
+        "CURRENT,500"
     })
     void verifiesContract(SensorType type, double expected) {
         assertEquals(expected, type.getDefaultThreshold());
