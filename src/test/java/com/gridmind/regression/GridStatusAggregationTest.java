@@ -18,7 +18,8 @@ class GridStatusAggregationTest {
         "WARNING,NORMAL,WARNING",
         "WARNING,WARNING,WARNING",
         "WARNING,CRITICAL,CRITICAL",
-        "WARNING,FAILED,FAILED"
+        "WARNING,FAILED,FAILED",
+        "WARNING,,WARNING"
     })
     void verifiesContract(GridStatus left, GridStatus right, GridStatus expected) {
         assertEquals(expected, GridStatus.worstOf(left, right));
