@@ -58,13 +58,13 @@ public class ClaudeExplanationService {
 
                 Responde la pregunta sobre esta alerta en español, en un máximo de cuatro frases.
                 Usa la fecha de registro como fecha de la alerta, no como inicio confirmado del problema.
-                Las lecturas cercanas son contexto, no evidencia de cuál activó la alerta.
+                Usa la lectura detonante si está disponible. Las lecturas cercanas solo aportan contexto.
                 Indica si es una prueba simulada. Si falta información o la pregunta sale del contexto, dilo.
                 Sugiere solo revisiones de datos en GridMind, nunca maniobras físicas.
 
                 Tipo de activo: %s
                 Fecha de registro: %s
-                Lecturas de los 5 minutos previos: %s
+                Evidencia de sensores: %s
                 Pregunta del operador: %s
                 """.formatted(alert.getAssetType(), alert.getCreatedAt(), evidence, question));
     }

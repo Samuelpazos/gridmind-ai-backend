@@ -90,7 +90,8 @@ public class AlertController {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Escribe una pregunta.");
                 }
                 try {
-                    answer = claudeExplanationService.answerAlert(alert, context.readings().toString(),
+                    answer = claudeExplanationService.answerAlert(alert,
+                            "Lectura detonante: " + context.triggeringReading() + ". Lecturas cercanas: " + context.readings(),
                             request.question().trim());
                     provider = "Anthropic Claude";
                 } catch (ClaudeNotConfiguredException | ClaudeQuotaExceededException exception) {
@@ -102,7 +103,12 @@ public class AlertController {
                 }
             }
         }
-        return Map.of("answer", answer, "provider", provider, "readings", context.readings());
+        Map<String, Object> response = new java.util.LinkedHashMap<>(Map.of(
+                "answer", answer, "provider", provider, "readings", context.readings()));
+        if (context.triggeringReading() != null) {
+            response.put("triggeringReading", context.triggeringReading());
+        }
+        return response;
     }
 
     public record AssistantQuestion(@Size(max = 20) String topic, @Size(max = 500) String question) {}
