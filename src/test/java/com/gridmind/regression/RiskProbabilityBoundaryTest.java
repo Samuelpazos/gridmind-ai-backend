@@ -10,7 +10,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class RiskProbabilityBoundaryTest {
     @ParameterizedTest
     @CsvSource({
-        "0.0,LOW"
+        "0.0,LOW",
+        "0.299999,LOW"
     })
     void verifiesContract(double probability, RiskLevel expected) {
         assertEquals(expected, RiskLevel.fromProbability(probability));
