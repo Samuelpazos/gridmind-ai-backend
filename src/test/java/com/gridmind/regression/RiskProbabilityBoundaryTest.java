@@ -16,7 +16,8 @@ class RiskProbabilityBoundaryTest {
         "0.599999,MEDIUM",
         "0.60,HIGH",
         "0.849999,HIGH",
-        "0.85,CRITICAL"
+        "0.85,CRITICAL",
+        "1.0,CRITICAL"
     })
     void verifiesContract(double probability, RiskLevel expected) {
         assertEquals(expected, RiskLevel.fromProbability(probability));
