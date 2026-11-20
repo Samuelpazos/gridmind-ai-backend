@@ -1,6 +1,7 @@
 package com.gridmind.service;
 
 import com.gridmind.command.*;
+import com.gridmind.domain.GridStatus;
 import com.gridmind.dto.CommandRequestDto;
 import com.gridmind.repository.AlertRepository;
 import com.gridmind.repository.MaintenanceRecommendationRepository;
@@ -14,6 +15,7 @@ import java.util.Map;
 public class CommandService {
 
     private final CommandInvoker commandInvoker;
+    private final AlertService alertService;
     private final TransformerRepository transformerRepository;
     private final AlertRepository alertRepository;
     private final MaintenanceRecommendationRepository maintenanceRepository;
@@ -21,10 +23,12 @@ public class CommandService {
     public CommandService(CommandInvoker commandInvoker,
                           TransformerRepository transformerRepository,
                           AlertRepository alertRepository,
+                          AlertService alertService,
                           MaintenanceRecommendationRepository maintenanceRepository) {
         this.commandInvoker = commandInvoker;
         this.transformerRepository = transformerRepository;
         this.alertRepository = alertRepository;
+        this.alertService = alertService;
         this.maintenanceRepository = maintenanceRepository;
     }
 
@@ -34,6 +38,10 @@ public class CommandService {
                 request.getParameters(), operator);
         commandInvoker.executeCommand(command, request.getTargetId(),
                 request.getParameters() != null ? request.getParameters().toString() : "", operator);
+        if (command instanceof SimulateFailureCommand) {
+            alertService.createAlertIfNotExists(request.getTargetId(), GridStatus.CRITICAL,
+                    "Falla simulada desde Operaciones.", "MANUAL_FAILURE_SIMULATION");
+        }
     }
 
     @Transactional

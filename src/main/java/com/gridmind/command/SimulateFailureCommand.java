@@ -2,6 +2,7 @@ package com.gridmind.command;
 
 import com.gridmind.domain.GridStatus;
 import com.gridmind.domain.RiskLevel;
+import com.gridmind.domain.TransformerAssetType;
 import com.gridmind.entity.TransformerEntity;
 import com.gridmind.repository.TransformerRepository;
 
@@ -28,6 +29,10 @@ public class SimulateFailureCommand implements GridCommand {
     public void execute() {
         TransformerEntity transformer = transformerRepository.findByIdAndArchivedAtIsNull(transformerId)
                 .orElseThrow(() -> new IllegalArgumentException("Transformer not found: " + transformerId));
+
+        if (transformer.getAssetType() != TransformerAssetType.TEST) {
+            throw new IllegalArgumentException("Solo puedes simular fallas en transformadores simulados.");
+        }
 
         // Create Memento snapshot
         this.memento = TransformerMemento.builder()
