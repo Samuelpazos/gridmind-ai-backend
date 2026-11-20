@@ -49,3 +49,7 @@ Submit two valid temperature-and-voltage batches for the same anchor at differen
 ## BE-16 · Persisted provenance
 
 After a valid mixed-origin batch, query its sensor readings by timestamp in the disposable database. Confirm temperature is `HARDWARE` and the other channels are `HARDWARE_DEMO`.
+
+## BE-17 · Demonstration values outside operational alerts
+
+Start with normal temperature, then submit extreme potentiometer values in an otherwise valid batch. Check that the demonstration channels do not generate operational alerts.
