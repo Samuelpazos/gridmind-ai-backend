@@ -131,6 +131,38 @@ class HardwareTelemetryServiceTest {
     }
 
     @Test
+    void storesDemonstrationChannelsWithoutPublishingOperationalEvents() {
+        configureOwner();
+        when(sensorRepository.findByCodeAndTransformerArchivedAtIsNull(sensor.getCode()))
+                .thenReturn(Optional.of(sensor));
+        when(sensorRepository.lockSensor(sensor.getId())).thenReturn(Optional.of(sensor));
+        when(sensorRepository.saveAndFlush(org.mockito.ArgumentMatchers.any(SensorEntity.class)))
+                .thenAnswer(invocation -> {
+                    SensorEntity saved = invocation.getArgument(0);
+                    saved.prePersist();
+                    return saved;
+                });
+        when(readingRepository.saveAllAndFlush(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        SensorObserver observer = org.mockito.Mockito.mock(SensorObserver.class);
+        sensorSubject.registerObserver(observer);
+
+        var result = service.ingestBatch(List.of(
+                new HardwareReadingRequestDto(sensor.getCode(), 22.0, "°C", null),
+                new HardwareReadingRequestDto(sensor.getCode(), 12.0, "kV", null, SensorType.VOLTAGE),
+                new HardwareReadingRequestDto(sensor.getCode(), 100.0, "A", null, SensorType.CURRENT),
+                new HardwareReadingRequestDto(sensor.getCode(), 1.5, "mm/s", null, SensorType.VIBRATION)
+        ));
+
+        assertEquals(List.of("TEMPERATURE", "VOLTAGE", "CURRENT", "VIBRATION"),
+                result.stream().map(reading -> reading.getSensorType()).toList());
+        assertEquals(List.of("HARDWARE", "HARDWARE_DEMO", "HARDWARE_DEMO", "HARDWARE_DEMO"),
+                result.stream().map(reading -> reading.getSource()).toList());
+        ArgumentCaptor<SensorEvent> event = ArgumentCaptor.forClass(SensorEvent.class);
+        verify(observer).onSensorReading(event.capture());
+        assertEquals(SensorType.TEMPERATURE, event.getValue().getSensorType());
+    }
+
+    @Test
     void rejectsSensorsOwnedByAnotherAccount() {
         configureOwner();
         sensor.getTransformer().getSubstation().setOwnerAccountId("another-account");

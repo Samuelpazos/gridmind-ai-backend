@@ -13,6 +13,7 @@ import java.util.List;
 
 @Component
 public class ReadingHandler {
+    public static final String DEMONSTRATION_SOURCE = "HARDWARE_DEMO";
 
     private final SensorReadingRepository readingRepository;
     private final SensorSubject sensorSubject;
@@ -42,9 +43,12 @@ public class ReadingHandler {
 
         List<SensorReadingEntity> saved = readingRepository.saveAllAndFlush(pending);
         List<SensorEvent> events = saved.stream()
+                .filter(reading -> !DEMONSTRATION_SOURCE.equals(reading.getSource()))
                 .map(this::toEvent)
                 .toList();
-        sensorSubject.notifyObservers(events);
+        if (!events.isEmpty()) {
+            sensorSubject.notifyObservers(events);
+        }
         return saved;
     }
 

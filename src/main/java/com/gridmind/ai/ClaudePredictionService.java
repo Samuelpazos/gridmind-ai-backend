@@ -8,6 +8,7 @@ import com.gridmind.repository.SensorReadingRepository;
 import com.gridmind.repository.SensorRepository;
 import com.gridmind.repository.TransformerRepository;
 import com.gridmind.strategy.EvaluationResult;
+import com.gridmind.telemetry.ReadingHandler;
 import org.springframework.stereotype.Service;
 
 import java.time.ZonedDateTime;
@@ -42,16 +43,25 @@ public class ClaudePredictionService {
                 .orElseThrow(() -> new TransformerNotFoundException(transformerId));
 
         Map<String, Double> sensorValues = new HashMap<>();
+        Map<String, Double> demonstrationValues = new HashMap<>();
         for (SensorEntity sensor : sensorRepository.findByTransformerId(transformerId)) {
             readingRepository.findLatestBySensorId(sensor.getId())
-                    .ifPresent(reading -> sensorValues.put(sensor.getType().name(), reading.getValue()));
+                    .ifPresent(reading -> {
+                        var target = ReadingHandler.DEMONSTRATION_SOURCE.equals(reading.getSource())
+                                ? demonstrationValues : sensorValues;
+                        target.put(sensor.getType().name(), reading.getValue());
+                    });
         }
+        demonstrationValues.keySet().removeAll(sensorValues.keySet());
+        sensorValues.putAll(demonstrationValues);
 
         if (!sensorValues.keySet().containsAll(REQUIRED_SENSOR_TYPES.stream().map(Enum::name).toList())) {
             throw new IncompleteSensorDataException(transformerId);
         }
 
-        EvaluationResult prediction = claudeService.predictFailure(transformer, sensorValues);
+        EvaluationResult prediction = demonstrationValues.isEmpty()
+                ? claudeService.predictFailure(transformer, sensorValues)
+                : claudeService.predictFailure(transformer, sensorValues, demonstrationValues.keySet());
         return ClaudePredictionDto.builder()
                 .transformerId(transformer.getId())
                 .transformerCode(transformer.getCode())
@@ -63,7 +73,9 @@ public class ClaudePredictionService {
                 .model(claudeService.getModel())
                 .sensorValues(Map.copyOf(sensorValues))
                 .generatedAt(ZonedDateTime.now())
-                .disclaimer("Estimación generativa orientativa; no está calibrada ni certificada y no sustituye los procedimientos operativos.")
+                .disclaimer(demonstrationValues.isEmpty()
+                        ? "Estimación generativa orientativa. Sigue los procedimientos operativos para tomar decisiones."
+                        : "Predicción de demostración. Usa valores de prueba o mediciones sin calibrar de la maqueta.")
                 .build();
     }
 }

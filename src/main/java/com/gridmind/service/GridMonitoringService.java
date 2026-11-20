@@ -1,5 +1,7 @@
 package com.gridmind.service;
 
+import static com.gridmind.telemetry.ReadingHandler.DEMONSTRATION_SOURCE;
+
 import com.gridmind.domain.GridStatus;
 import com.gridmind.domain.RiskLevel;
 import com.gridmind.domain.SubstationNode;
@@ -104,7 +106,7 @@ public class GridMonitoringService {
         Map<String, Double> sensorValues = new HashMap<>();
         for (SensorEntity s : sensors) {
             SensorReadingEntity r = readingRepository.findLatestBySensorId(s.getId()).orElse(null);
-            if (r != null) {
+            if (r != null && !DEMONSTRATION_SOURCE.equals(r.getSource())) {
                 sensorValues.put(s.getType().name(), r.getValue());
             }
         }

@@ -1,5 +1,7 @@
 package com.gridmind.service;
 
+import static com.gridmind.telemetry.ReadingHandler.DEMONSTRATION_SOURCE;
+
 import com.gridmind.domain.GridStatus;
 import com.gridmind.domain.RiskLevel;
 import com.gridmind.domain.SensorType;
@@ -70,6 +72,7 @@ public class SimulationService {
         Double originalValue = null;
         for (SensorEntity sensor : sensors) {
             SensorReadingEntity reading = readingRepository.findLatestBySensorId(sensor.getId()).orElse(null);
+            if (reading != null && DEMONSTRATION_SOURCE.equals(reading.getSource())) continue;
             double value = reading != null ? reading.getValue() : sensor.getType().getDefaultThreshold() * 0.6;
             sensorValues.put(sensor.getType().name(), value);
             if (reading == null) referenceInputs.add(sensor.getType().name());

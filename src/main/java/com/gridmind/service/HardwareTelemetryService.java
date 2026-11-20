@@ -1,6 +1,7 @@
 package com.gridmind.service;
 
 import com.gridmind.config.WorkspaceDataSourceConfig;
+import com.gridmind.domain.SensorType;
 import com.gridmind.domain.TransformerAssetType;
 import com.gridmind.dto.HardwareReadingRequestDto;
 import com.gridmind.dto.SensorReadingDto;
@@ -33,6 +34,7 @@ import java.util.Set;
 public class HardwareTelemetryService {
 
     private static final int MAX_BATCH_SIZE = 32;
+    private static final String DEMO_SENSOR_PREFIX = "DEMO:";
 
     private final SensorRepository sensorRepository;
     private final SensorReadingBatchRepository readingBatchRepository;
@@ -133,7 +135,7 @@ public class HardwareTelemetryService {
 
         for (HardwareReadingRequestDto request : requests) {
             String sensorCode = request.sensorCode().trim();
-            if (!seenSensors.add(sensorCode)) {
+            if (!seenSensors.add(sensorCode + ":" + request.demonstrationChannel())) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "El lote contiene más de una lectura para el sensor " + sensorCode + ".");
             }
@@ -147,8 +149,17 @@ public class HardwareTelemetryService {
                 throw new ResponseStatusException(HttpStatus.NOT_FOUND, "El sensor no pertenece a este dispositivo.");
             }
 
+            if (sensorCode.startsWith(DEMO_SENSOR_PREFIX)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Envía los canales de demostración con el código del sensor de temperatura.");
+            }
+            String source = "HARDWARE";
+            if (request.demonstrationChannel() != null) {
+                sensor = resolveDemonstrationSensor(sensor, request.demonstrationChannel());
+                source = ReadingHandler.DEMONSTRATION_SOURCE;
+            }
             ZonedDateTime timestamp = request.timestamp() == null ? now : request.timestamp();
-            pending.add(new ReadingInput(sensor, request.value(), request.unit().trim(), timestamp, "HARDWARE"));
+            pending.add(new ReadingInput(sensor, request.value(), request.unit().trim(), timestamp, source));
         }
 
         SensorReadingBatchEntity batch = new SensorReadingBatchEntity();
@@ -165,5 +176,25 @@ public class HardwareTelemetryService {
         batch.setProcessedAt(ZonedDateTime.now());
         readingBatchRepository.save(batch);
         return response;
+    }
+
+    private SensorEntity resolveDemonstrationSensor(SensorEntity anchor, SensorType channel) {
+        if (anchor.getType() != SensorType.TEMPERATURE || channel == SensorType.TEMPERATURE) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Los canales de demostración requieren un sensor de temperatura vinculado.");
+        }
+        sensorRepository.lockSensor(anchor.getId()).orElseThrow(() ->
+                new ResponseStatusException(HttpStatus.NOT_FOUND, "El sensor de temperatura ya no está disponible."));
+        var transformer = anchor.getTransformer();
+        String code = DEMO_SENSOR_PREFIX + anchor.getId() + "-" + channel.name().substring(0, 3);
+        return sensorRepository.findByCode(code)
+                .filter(sensor -> transformer.getId().equals(sensor.getTransformer().getId())
+                        && sensor.getType() == channel)
+                .orElseGet(() -> sensorRepository.saveAndFlush(SensorEntity.builder()
+                        .transformer(transformer)
+                        .code(code)
+                        .type(channel)
+                        .unit(channel.getDefaultUnit())
+                        .build()));
     }
 }
