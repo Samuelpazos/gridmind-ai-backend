@@ -1,7 +1,7 @@
-# PostgreSQL y Flyway
+# PostgreSQL and Flyway
 
-La API aplica las migraciones de `src/main/resources/db/migration` al iniciar. PostgreSQL guarda el inventario, las lecturas, las alertas, las simulaciones y el historial de comandos.
+The API applies migrations from `src/main/resources/db/migration` at startup. PostgreSQL stores inventory, readings, alerts, simulations, and command history.
 
-Para cambiar el esquema, crea una migración con el siguiente número disponible. Conserva intactos los archivos de migración que ya se aplicaron. Haz una copia antes de migrar una base con datos que quieras conservar.
+Create a new migration with the next available number for schema changes. Preserve migrations already applied and back up any data you need to keep.
 
-Usa una base y credenciales distintas para pruebas y producción. Guarda el respaldo fuera de Git y verifica que puedas restaurarlo. Para validar el esquema desde cero, ejecuta `mvn -Dtest=PostgresSchemaIntegrationTest test` con Docker activo.
+Use separate databases and credentials for testing and production. Store backups outside Git and verify that they can be restored. To validate a clean schema, run `mvn -Dtest=PostgresSchemaIntegrationTest test` with Docker running.
