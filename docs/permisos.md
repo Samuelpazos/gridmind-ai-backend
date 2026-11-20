@@ -1,11 +1,7 @@
-# Acceso y permisos
+# Access and permissions
 
-| Cuenta | Alcance actual |
-| --- | --- |
-| Administrador | Administra el inventario, vincula sensores, modifica configuración y consulta archivados. |
-| Operador | Consulta el monitoreo y puede usar las operaciones habilitadas por la API. |
-| Demostración | Accede al simulador y a operaciones de prueba. Puede cambiar la estrategia y ejecutar comandos si la demo está habilitada. |
+Operators manage their own inventory, link sensors, run simulations, and use the available monitoring and maintenance controls. The backend enforces inventory isolation and checks access to each resource.
 
-Las restricciones del inventario se comprueban en el backend. La interfaz muestra los controles según el rol de la sesión.
+The bootstrap account configured through `ADMIN_EMAIL` owns the existing inventory and receives telemetry from the current ESP32 token. Keep those settings separate from public registration and the optional demo account.
 
-Para una revisión remota, verifica primero el ingreso con la cuenta del evaluador y comprueba que el acceso demo y el registro público estén desactivados si la instancia solo se usará por invitación.
+For a remote review, test the evaluator's sign-in. Disable demo access and public registration if the instance is invitation-only.
