@@ -129,6 +129,10 @@ public class AuthController {
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                         .body(Map.of("message", "No se pudo completar el inicio de sesión."));
             }
+            if (principal.role() == UserRole.DEMO && !demoEnabled) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(Map.of("message", "El acceso de demostración está desactivado."));
+            }
             if (requiredRole == UserRole.ADMIN && principal.role() != UserRole.ADMIN) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
                         .body(Map.of("message", "Esta cuenta no tiene permisos de administrador."));

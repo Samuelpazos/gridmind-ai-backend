@@ -65,6 +65,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         MaintenanceController.class,
         OperationalCatalogController.class
 }, properties = {
+        "auth.bootstrap.demo.enabled=true",
         "auth.bootstrap.demo.email=demo@example.com",
         "auth.bootstrap.demo.password=configured-demo-password"
 })
@@ -113,6 +114,8 @@ class AuthSecurityTest {
                         .with(user("operator").roles("OPERATOR"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/ws/stream").with(user("operator").roles("OPERATOR")))
                 .andExpect(status().isForbidden());
     }
 
