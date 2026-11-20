@@ -24,5 +24,8 @@ public class AlertDto {
     private String acknowledgedBy;
     private ZonedDateTime acknowledgedAt;
     private String source;
+    private String readingId;
+    private String readingSource;
+    private ZonedDateTime readingTimestamp;
     private ZonedDateTime createdAt;
 }

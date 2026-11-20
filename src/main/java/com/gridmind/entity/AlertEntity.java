@@ -41,6 +41,15 @@ public class AlertEntity {
     @Column(nullable = false)
     private String source;
 
+    @Column(name = "reading_id", length = 36)
+    private String readingId;
+
+    @Column(name = "reading_source", length = 20)
+    private String readingSource;
+
+    @Column(name = "reading_timestamp")
+    private ZonedDateTime readingTimestamp;
+
     @Column(name = "created_at")
     private ZonedDateTime createdAt;
 

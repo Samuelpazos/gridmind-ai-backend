@@ -139,6 +139,9 @@ public class EntityDtoMapper {
                 .acknowledgedBy(entity.getAcknowledgedBy())
                 .acknowledgedAt(entity.getAcknowledgedAt())
                 .source(entity.getSource())
+                .readingId(entity.getReadingId())
+                .readingSource(entity.getReadingSource())
+                .readingTimestamp(entity.getReadingTimestamp())
                 .createdAt(entity.getCreatedAt())
                 .build();
     }
