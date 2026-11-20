@@ -45,3 +45,7 @@ Send a temperature item and demonstration items for voltage, current and vibrati
 ## BE-15 · Reused demonstration sensor IDs
 
 Submit two valid temperature-and-voltage batches for the same anchor at different times. Compare the returned voltage sensor IDs and confirm they match.
+
+## BE-16 · Persisted provenance
+
+After a valid mixed-origin batch, query its sensor readings by timestamp in the disposable database. Confirm temperature is `HARDWARE` and the other channels are `HARDWARE_DEMO`.
