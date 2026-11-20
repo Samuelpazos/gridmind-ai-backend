@@ -81,3 +81,7 @@ Provide both measured and demonstration readings for one channel in a disposable
 ## BE-24 · PostgreSQL migration compatibility
 
 Apply Flyway through V17 in a disposable database containing hardware and simulated readings. Apply V18, verify that existing rows retain their sources, and insert a valid demonstration reading.
+
+## BE-25 · Reject unknown origin after V18
+
+Apply V18 and attempt to insert a reading with an unsupported source inside a rolled-back transaction. Expect PostgreSQL check violation SQLSTATE 23514.
