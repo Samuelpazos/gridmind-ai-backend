@@ -11,7 +11,8 @@ class RiskProbabilityBoundaryTest {
     @ParameterizedTest
     @CsvSource({
         "0.0,LOW",
-        "0.299999,LOW"
+        "0.299999,LOW",
+        "0.30,MEDIUM"
     })
     void verifiesContract(double probability, RiskLevel expected) {
         assertEquals(expected, RiskLevel.fromProbability(probability));
