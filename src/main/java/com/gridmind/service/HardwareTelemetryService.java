@@ -53,7 +53,7 @@ public class HardwareTelemetryService {
             ReadingHandler readingHandler,
             UserAccountRepository accountRepository,
             @Value("${telemetry.device-token:}") String deviceToken,
-            @Value("${auth.bootstrap.admin.email:}") String deviceOwnerEmail) {
+            @Value("${telemetry.device-owner-email}") String deviceOwnerEmail) {
         this.sensorRepository = sensorRepository;
         this.readingBatchRepository = readingBatchRepository;
         this.sensorReadingRepository = sensorReadingRepository;
