@@ -18,7 +18,8 @@ class TelemetrySensorContractTest {
         "TEMPERATURE,AcTiVe,°C,200",
         "VOLTAGE,ACTIVE,kV,200",
         "CURRENT,ACTIVE,A,200",
-        "VIBRATION,ACTIVE,mm/s,200"
+        "VIBRATION,ACTIVE,mm/s,200",
+        "VOLTAGE,ACTIVE,V,422"
     })
     void verifiesContract(SensorType type, String sensorStatus, String reportedUnit, int expectedStatus) {
         var now = ZonedDateTime.parse("2026-01-01T00:00:00Z");
