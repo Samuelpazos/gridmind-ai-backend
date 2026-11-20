@@ -37,6 +37,9 @@ public class SubstationEntity {
     @Column(nullable = false)
     private GridStatus status;
 
+    @Column(name = "owner_account_id")
+    private String ownerAccountId;
+
     @Column(name = "created_at")
     private ZonedDateTime createdAt;
 

@@ -1,5 +1,6 @@
 package com.gridmind.service;
 
+import com.gridmind.config.WorkspaceDataSourceConfig;
 import com.gridmind.domain.SensorType;
 import com.gridmind.domain.SubstationType;
 import com.gridmind.domain.TransformerAssetType;
@@ -66,6 +67,7 @@ public class GridProvisioningService {
         GridComponentFactory factory = factoryFor(request.type());
         SubstationEntity substation = factory.createSubstation(
                 request.name().trim(), request.location().trim());
+        assignWorkspace(substation);
         TransformerEntity transformer = factory.createTransformer(
                 substation, request.transformerName().trim(),
                 request.ratingKva(), request.ageYears());
@@ -111,6 +113,7 @@ public class GridProvisioningService {
             GridComponentFactory substationFactory = factoryFor(request.substationType());
             substation = substationFactory.createSubstation(
                     request.substationName().trim(), request.substationLocation().trim());
+            assignWorkspace(substation);
         } else {
             substation = substationRepository.findById(request.substationId().trim())
                     .orElseThrow(() -> new ResponseStatusException(
@@ -191,7 +194,7 @@ public class GridProvisioningService {
             throw new IllegalArgumentException("Este transformador ya tiene un sensor de temperatura vinculado.");
         }
         if (sensorRepository.existsByCode(code)) {
-            throw new IllegalArgumentException("Ese código ya está vinculado a otro transformador. Revisa el código del ESP32.");
+            throw conflict("Este código de sensor ya está en uso. Usa un código distinto para otra placa.");
         }
 
         SensorTypeCatalogEntity catalog = sensorTypeCatalogRepository.findByCodeAndActiveTrue(SensorType.TEMPERATURE.name())
@@ -203,7 +206,11 @@ public class GridProvisioningService {
         try {
             transformer.getSensors().add(sensorRepository.saveAndFlush(sensor));
         } catch (DataIntegrityViolationException exception) {
-            throw new IllegalArgumentException("No se pudo vincular el sensor. Comprueba que el código esté disponible.", exception);
+            if (exception.getMostSpecificCause() instanceof java.sql.SQLException cause
+                    && "23505".equals(cause.getSQLState())) {
+                throw conflict("Este código de sensor ya está en uso. Usa un código distinto para otra placa.");
+            }
+            throw exception;
         }
         return mapper.toDto(transformer);
     }
@@ -240,6 +247,13 @@ public class GridProvisioningService {
                 .orElseThrow(() -> notFound("No se encontró el transformador archivado."));
         transformer.setArchivedAt(null);
         return mapper.toDto(transformerRepository.save(transformer));
+    }
+
+    private static void assignWorkspace(SubstationEntity substation) {
+        var account = WorkspaceDataSourceConfig.currentAccount();
+        if (account != null) {
+            substation.setOwnerAccountId(account.id());
+        }
     }
 
     private GridComponentFactory factoryFor(SubstationType type) {

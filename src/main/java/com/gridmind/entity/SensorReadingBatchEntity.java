@@ -20,6 +20,8 @@ public class SensorReadingBatchEntity {
     @Id
     private String id;
     private String source;
+    @Column(name = "owner_account_id")
+    private String ownerAccountId;
     @Column(name = "reading_count")
     private int readingCount;
     @Column(name = "received_at")
