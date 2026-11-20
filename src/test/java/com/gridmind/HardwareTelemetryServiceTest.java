@@ -138,6 +138,19 @@ class HardwareTelemetryServiceTest {
     }
 
     @Test
+    void rejectsAnUnregisteredSensorCode() {
+        configureOwner();
+        when(sensorRepository.findByCodeAndTransformerArchivedAtIsNull("UNREGISTERED"))
+                .thenReturn(Optional.empty());
+
+        var error = assertThrows(ResponseStatusException.class, () -> service.ingestBatch(List.of(
+                new HardwareReadingRequestDto("UNREGISTERED", 22.0, "°C", null))));
+
+        assertEquals(HttpStatus.NOT_FOUND, error.getStatusCode());
+        verify(readingRepository, never()).saveAllAndFlush(anyList());
+    }
+
+    @Test
     void storesDemonstrationChannelsWithoutPublishingOperationalEvents() {
         configureOwner();
         when(sensorRepository.findByCodeAndTransformerArchivedAtIsNull(sensor.getCode()))
