@@ -37,3 +37,7 @@ Send a valid temperature item and a voltage demonstration item with the wrong un
 ## BE-13 · Temperature-only firmware
 
 Send a single normal DS18B20 item without `demonstrationChannel`. Expect HTTP 201 and `source=HARDWARE`.
+
+## BE-14 · Four-channel firmware
+
+Send a temperature item and demonstration items for voltage, current and vibration using its linked temperature code. Expect HTTP 201 and four readings with the configured units.
