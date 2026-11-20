@@ -25,3 +25,7 @@ Send a temperature item using `kV`. Expect HTTP 422 and no new reading.
 ## BE-10 · Out-of-range sensor magnitude
 
 Send a value with absolute magnitude greater than 1,000,000. Expect HTTP 400.
+
+## BE-11 · Timestamp ahead of server time
+
+Send a reading dated two minutes after the API server clock. Expect HTTP 400.
