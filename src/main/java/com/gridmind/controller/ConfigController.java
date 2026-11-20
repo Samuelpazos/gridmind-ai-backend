@@ -1,5 +1,6 @@
 package com.gridmind.controller;
 
+import com.gridmind.domain.SensorType;
 import com.gridmind.dto.GridProvisioningRequestDto;
 import com.gridmind.dto.SimulatorConfigDto;
 import com.gridmind.dto.SubstationDto;
@@ -11,6 +12,10 @@ import com.gridmind.simulation.SimulationScenario;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Size;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -64,9 +69,26 @@ public class ConfigController {
         return ResponseEntity.ok(SimulatorConfigDto.builder()
                 .active(sensorSimulator.isActive())
                 .scenario(sensorSimulator.getCurrentScenario().name())
+                .manualScenario(sensorSimulator.getManualScenario())
                 .intervalSeconds(3)
                 .build());
     }
+
+    @PutMapping("/simulator/manual")
+    public ResponseEntity<SensorSimulator.ManualScenario> applyManualScenario(
+            @Valid @RequestBody ManualScenarioRequest request) {
+        return ResponseEntity.ok(sensorSimulator.applyManualScenario(request.transformerId(), request.values()));
+    }
+
+    @DeleteMapping("/simulator/manual")
+    public ResponseEntity<Void> clearManualScenario() {
+        sensorSimulator.clearManualScenario();
+        return ResponseEntity.noContent().build();
+    }
+
+    public record ManualScenarioRequest(
+            @NotBlank @Size(max = 36) String transformerId,
+            @NotEmpty @Size(max = 4) Map<SensorType, Double> values) {}
 
     @GetMapping("/simulator")
     @Operation(summary = "Consultar si la telemetría de demostración simulada está activa")
@@ -74,6 +96,7 @@ public class ConfigController {
         return ResponseEntity.ok(SimulatorConfigDto.builder()
                 .active(sensorSimulator.isActive())
                 .scenario(sensorSimulator.getCurrentScenario().name())
+                .manualScenario(sensorSimulator.getManualScenario())
                 .intervalSeconds(3)
                 .build());
     }

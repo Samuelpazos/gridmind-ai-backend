@@ -1,9 +1,12 @@
 package com.gridmind;
 
 import com.gridmind.domain.SensorType;
+import com.gridmind.domain.TransformerAssetType;
 import com.gridmind.entity.SensorEntity;
 import com.gridmind.entity.SensorReadingEntity;
 import com.gridmind.entity.TransformerEntity;
+import com.gridmind.entity.SubstationEntity;
+import com.gridmind.entity.UserAccountEntity;
 import com.gridmind.mapper.EntityDtoMapper;
 import com.gridmind.observer.SensorEvent;
 import com.gridmind.observer.SensorObserver;
@@ -11,6 +14,7 @@ import com.gridmind.observer.SensorSubject;
 import com.gridmind.repository.SensorReadingRepository;
 import com.gridmind.repository.SensorReadingBatchRepository;
 import com.gridmind.repository.SensorRepository;
+import com.gridmind.repository.UserAccountRepository;
 import com.gridmind.service.HardwareTelemetryService;
 import com.gridmind.simulation.SensorSimulator;
 import com.gridmind.telemetry.TelemetryValidationChain;
@@ -39,6 +43,8 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class HardwareTelemetryServiceTest {
 
+    private static final String OWNER_EMAIL = "owner@example.test";
+    private static final String OWNER_ID = "workspace-1";
     private static final String DEVICE_TOKEN = "a-secure-device-token-that-is-at-least-32-characters";
 
     @Mock
@@ -49,6 +55,9 @@ class HardwareTelemetryServiceTest {
     private SensorReadingBatchRepository readingBatchRepository;
     @Mock
     private SensorSimulator sensorSimulator;
+
+    @Mock
+    private UserAccountRepository accountRepository;
 
     private SensorSubject sensorSubject;
     private HardwareTelemetryService service;
@@ -64,11 +73,15 @@ class HardwareTelemetryServiceTest {
                 new EntityDtoMapper(),
                 sensorSimulator,
                 new ReadingHandler(readingRepository, sensorSubject, new TelemetryValidationChain()),
-                DEVICE_TOKEN
+                accountRepository,
+                DEVICE_TOKEN,
+                OWNER_EMAIL
         );
         TransformerEntity transformer = TransformerEntity.builder()
                 .id("transformer-1")
                 .code("T-N-001")
+                .assetType(TransformerAssetType.HARDWARE)
+                .substation(SubstationEntity.builder().ownerAccountId(OWNER_ID).build())
                 .build();
         sensor = SensorEntity.builder()
                 .id("sensor-1")
@@ -82,7 +95,7 @@ class HardwareTelemetryServiceTest {
 
     @Test
     void storesHardwareReadingAndNotifiesObservers() {
-        when(sensorSimulator.isActive()).thenReturn(false);
+        configureOwner();
         when(sensorRepository.findByCodeAndTransformerArchivedAtIsNull("SN-001-TMP"))
                 .thenReturn(Optional.of(sensor));
         when(readingRepository.saveAllAndFlush(anyList())).thenAnswer(invocation -> {
@@ -111,6 +124,24 @@ class HardwareTelemetryServiceTest {
         assertEquals(32.5, eventCaptor.getValue().getValue());
     }
 
+    private void configureOwner() {
+        var owner = new UserAccountEntity();
+        owner.setId(OWNER_ID);
+        when(accountRepository.findByEmail(OWNER_EMAIL)).thenReturn(Optional.of(owner));
+    }
+
+    @Test
+    void rejectsSensorsOwnedByAnotherAccount() {
+        configureOwner();
+        sensor.getTransformer().getSubstation().setOwnerAccountId("another-account");
+        when(sensorRepository.findByCodeAndTransformerArchivedAtIsNull("SN-001-TMP"))
+                .thenReturn(Optional.of(sensor));
+        var error = assertThrows(ResponseStatusException.class, () -> service.ingestBatch(List.of(
+                new HardwareReadingRequestDto("SN-001-TMP", 32.5, "°C", null))));
+        assertEquals(HttpStatus.NOT_FOUND, error.getStatusCode());
+        verify(readingRepository, never()).saveAllAndFlush(anyList());
+    }
+
     @Test
     void rejectsInvalidDeviceToken() {
         ResponseStatusException error = assertThrows(
@@ -130,7 +161,7 @@ class HardwareTelemetryServiceTest {
                 new EntityDtoMapper(),
                 sensorSimulator,
                 new ReadingHandler(readingRepository, sensorSubject, new TelemetryValidationChain()),
-                ""
+                accountRepository, "", OWNER_EMAIL
         );
 
         ResponseStatusException error = assertThrows(
@@ -143,7 +174,8 @@ class HardwareTelemetryServiceTest {
 
     @Test
     void rejectsHardwareReadingsWhileSimulatorIsActive() {
-        when(sensorSimulator.isActive()).thenReturn(true);
+        configureOwner();
+        when(sensorSimulator.isActiveFor(OWNER_ID)).thenReturn(true);
 
         ResponseStatusException error = assertThrows(
                 ResponseStatusException.class,
@@ -186,7 +218,7 @@ class HardwareTelemetryServiceTest {
 
     @Test
     void validatesTheWholeBatchBeforePersistingAnyReading() {
-        when(sensorSimulator.isActive()).thenReturn(false);
+        configureOwner();
         when(sensorRepository.findByCodeAndTransformerArchivedAtIsNull("SN-001-TMP"))
                 .thenReturn(Optional.of(sensor));
         SensorEntity secondSensor = SensorEntity.builder()

@@ -1,5 +1,7 @@
 package com.gridmind.service;
 
+import com.gridmind.config.WorkspaceDataSourceConfig;
+import com.gridmind.domain.TransformerAssetType;
 import com.gridmind.dto.HardwareReadingRequestDto;
 import com.gridmind.dto.SensorReadingDto;
 import com.gridmind.dto.TelemetryStatusDto;
@@ -9,6 +11,7 @@ import com.gridmind.mapper.EntityDtoMapper;
 import com.gridmind.repository.SensorReadingBatchRepository;
 import com.gridmind.repository.SensorReadingRepository;
 import com.gridmind.repository.SensorRepository;
+import com.gridmind.repository.UserAccountRepository;
 import com.gridmind.simulation.SensorSimulator;
 import com.gridmind.telemetry.ReadingHandler;
 import com.gridmind.telemetry.ReadingHandler.ReadingInput;
@@ -38,6 +41,8 @@ public class HardwareTelemetryService {
     private final SensorSimulator sensorSimulator;
     private final ReadingHandler readingHandler;
     private final String deviceToken;
+    private final String deviceOwnerEmail;
+    private final UserAccountRepository accountRepository;
 
     public HardwareTelemetryService(
             SensorRepository sensorRepository,
@@ -46,7 +51,9 @@ public class HardwareTelemetryService {
             EntityDtoMapper mapper,
             SensorSimulator sensorSimulator,
             ReadingHandler readingHandler,
-            @Value("${telemetry.device-token:}") String deviceToken) {
+            UserAccountRepository accountRepository,
+            @Value("${telemetry.device-token:}") String deviceToken,
+            @Value("${auth.bootstrap.admin.email:}") String deviceOwnerEmail) {
         this.sensorRepository = sensorRepository;
         this.readingBatchRepository = readingBatchRepository;
         this.sensorReadingRepository = sensorReadingRepository;
@@ -54,10 +61,12 @@ public class HardwareTelemetryService {
         this.sensorSimulator = sensorSimulator;
         this.readingHandler = readingHandler;
         this.deviceToken = deviceToken == null ? "" : deviceToken.trim();
+        this.deviceOwnerEmail = deviceOwnerEmail.trim().toLowerCase(Locale.ROOT);
+        this.accountRepository = accountRepository;
     }
 
     public boolean isConfigured() {
-        return deviceToken.length() >= 32;
+        return deviceToken.length() >= 32 && !deviceOwnerEmail.isEmpty();
     }
 
     public void authenticateDevice(String suppliedToken) {
@@ -80,8 +89,9 @@ public class HardwareTelemetryService {
                 .findFirstBySourceOrderByTimestampDesc("HARDWARE")
                 .map(reading -> reading.getTimestamp())
                 .orElse(null);
+        var account = WorkspaceDataSourceConfig.currentAccount();
         return new TelemetryStatusDto(
-                isConfigured(),
+                isConfigured() && (account == null || deviceOwnerEmail.equals(account.email())),
                 sensorSimulator.isActive(),
                 "El modelo local se entrenó con datos sintéticos. Valida y etiqueta mediciones de la maqueta antes de interpretar sus predicciones como desempeño real.",
                 resolveRecentDataSource(recentSources),
@@ -105,7 +115,10 @@ public class HardwareTelemetryService {
 
     @Transactional
     public List<SensorReadingDto> ingestBatch(List<HardwareReadingRequestDto> requests) {
-        if (sensorSimulator.isActive()) {
+        var owner = accountRepository.findByEmail(deviceOwnerEmail)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                        "La cuenta propietaria de la telemetría no está configurada."));
+        if (sensorSimulator.isActiveFor(owner.getId())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Pausa el simulador antes de recibir lecturas físicas para no mezclar datos simulados y de hardware.");
         }
@@ -128,12 +141,19 @@ public class HardwareTelemetryService {
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                             "No existe un sensor registrado con código " + sensorCode + "."));
 
+            var transformer = sensor.getTransformer();
+            if (transformer.getAssetType() != TransformerAssetType.HARDWARE
+                    || !owner.getId().equals(transformer.getSubstation().getOwnerAccountId())) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "El sensor no pertenece a este dispositivo.");
+            }
+
             ZonedDateTime timestamp = request.timestamp() == null ? now : request.timestamp();
             pending.add(new ReadingInput(sensor, request.value(), request.unit().trim(), timestamp, "HARDWARE"));
         }
 
         SensorReadingBatchEntity batch = new SensorReadingBatchEntity();
         batch.setSource("HARDWARE");
+        batch.setOwnerAccountId(owner.getId());
         batch.setReadingCount(pending.size());
         batch.setStatus("RECEIVED");
         readingBatchRepository.saveAndFlush(batch);
