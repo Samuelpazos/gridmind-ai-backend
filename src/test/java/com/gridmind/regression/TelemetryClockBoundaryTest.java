@@ -16,7 +16,8 @@ class TelemetryClockBoundaryTest {
     @CsvSource({
         "-86400000,200",
         "-1,200",
-        "0,200"
+        "0,200",
+        "1,200"
     })
     void verifiesContract(long offsetMillis, int expectedStatus) {
         var now = ZonedDateTime.parse("2026-01-01T00:00:00Z");
