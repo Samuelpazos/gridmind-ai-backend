@@ -69,3 +69,7 @@ Keep the telemetry owner's simulator paused and start simulation in a second wor
 ## BE-21 · Workspace-scoped last hardware reading
 
 In the owner's session, read telemetry status after a known hardware batch. Verify the timestamp and confirm a different account cannot see that reading.
+
+## BE-22 · Prediction inputs include demonstration provenance
+
+Configure a test double for Claude, request a prediction for a four-channel prototype and verify that the provider request identifies the demonstration channels.
