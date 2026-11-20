@@ -28,7 +28,8 @@ class TelemetryNumericBoundaryTest {
         "-1.7976931348623157E308,400",
         "4.9E-324,200",
         "-4.9E-324,200",
-        "-273.15,200"
+        "-273.15,200",
+        "0.001,200"
     })
     void verifiesContract(double value, int expectedStatus) {
         var now = ZonedDateTime.parse("2026-01-01T00:00:00Z");
